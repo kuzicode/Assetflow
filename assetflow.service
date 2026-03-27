@@ -1,0 +1,18 @@
+[Unit]
+Description=Assetflow DeFi Portfolio Dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=YOUR_USER
+WorkingDirectory=/YOUR/PATH/TO/assetflow
+ExecStart=/usr/bin/node server/dist/index.js
+Restart=on-failure
+RestartSec=5
+Environment=NODE_ENV=production
+Environment=PORT=3001
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
