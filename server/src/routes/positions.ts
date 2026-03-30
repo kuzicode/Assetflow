@@ -62,7 +62,17 @@ function buildIncomeBreakdown(positions: TokenPosition[]): IncomeBreakdown {
   };
 }
 
+// In-flight deduplication: if a fetch is already running, share its Promise
+// Prevents concurrent OKX/RPC calls when browser refresh and startup cron fire simultaneously
+let _fetchInFlight: Promise<any> | null = null;
+
 export async function fetchPositionsAggregate() {
+  if (_fetchInFlight) return _fetchInFlight;
+  _fetchInFlight = _fetchPositionsAggregateImpl().finally(() => { _fetchInFlight = null; });
+  return _fetchInFlight;
+}
+
+async function _fetchPositionsAggregateImpl() {
   // 1. Get wallets from DB
   const walletRows: any[] = db.prepare('SELECT * FROM wallets').all();
   const wallets = walletRows.map((w) => ({
