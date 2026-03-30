@@ -179,36 +179,22 @@ export async function fetchPositionsAggregate() {
             for (const pos of uniPositions) {
               const ethPrice = prices['ETH'] || prices['WETH'] || 0;
               const stablePrice = 1;
-              // token0 fees
-              if (pos.fees0 > 0.000001) {
-                const sym0 = pos.token0Symbol;
-                const price0 = STABLECOIN_SYMBOLS.includes(sym0) ? stablePrice : (prices[sym0] || ethPrice);
-                const group0 = getBaseTokenGroup(sym0);
-                if (!groupMap[group0]) groupMap[group0] = [];
-                groupMap[group0].push({
+              // LP fees — always converted to USD and grouped under STABLE
+              const sym0 = pos.token0Symbol;
+              const sym1 = pos.token1Symbol;
+              const price0 = STABLECOIN_SYMBOLS.includes(sym0) ? stablePrice : (prices[sym0] || ethPrice);
+              const price1 = STABLECOIN_SYMBOLS.includes(sym1) ? stablePrice : (prices[sym1] || ethPrice);
+              const totalFeeUsd = (pos.fees0 > 0.000001 ? pos.fees0 * price0 : 0) + (pos.fees1 > 0.000001 ? pos.fees1 * price1 : 0);
+              if (totalFeeUsd > 0.01) {
+                if (!groupMap['STABLE']) groupMap['STABLE'] = [];
+                groupMap['STABLE'].push({
                   id: uuidv4(),
-                  label: `${wallet.label}-${pos.token0Symbol}/${pos.token1Symbol}-手续费`,
+                  label: `${wallet.label}-${sym0}/${sym1}-手续费`,
                   source: 'lp_fees',
                   protocol: 'Uniswap V3',
                   chain,
-                  amount: pos.fees0,
-                  usdValue: pos.fees0 * price0,
-                });
-              }
-              // token1 fees
-              if (pos.fees1 > 0.000001) {
-                const sym1 = pos.token1Symbol;
-                const price1 = STABLECOIN_SYMBOLS.includes(sym1) ? stablePrice : (prices[sym1] || ethPrice);
-                const group1 = getBaseTokenGroup(sym1);
-                if (!groupMap[group1]) groupMap[group1] = [];
-                groupMap[group1].push({
-                  id: uuidv4(),
-                  label: `${wallet.label}-${pos.token0Symbol}/${pos.token1Symbol}-手续费`,
-                  source: 'lp_fees',
-                  protocol: 'Uniswap V3',
-                  chain,
-                  amount: pos.fees1,
-                  usdValue: pos.fees1 * price1,
+                  amount: totalFeeUsd,
+                  usdValue: totalFeeUsd,
                 });
               }
             }
@@ -298,11 +284,17 @@ export async function fetchPositionsAggregate() {
       groupMap[group].push({ id: uuidv4(), label: `${b.walletLabel}-${b.symbol}`, source: 'wallet', chain: b.chain, amount: b.amount, usdValue: b.amount * price });
     }
     for (const d of defiSubs) {
-      const group = (d as any)._group;
       const sym = (d as any)._symbol;
-      if (!groupMap[group]) groupMap[group] = [];
       const price = prices[sym] || 0;
-      groupMap[group].push({ id: d.id, label: d.label, source: d.source, protocol: d.protocol, chain: d.chain, amount: d.amount, usdValue: Math.abs(d.amount) * price });
+      const usdValue = Math.abs(d.amount) * price;
+      // LP fees are always shown as USD under STABLE regardless of token type
+      const group = d.source === 'lp_fees' ? 'STABLE' : (d as any)._group;
+      if (!groupMap[group]) groupMap[group] = [];
+      if (d.source === 'lp_fees') {
+        groupMap[group].push({ id: d.id, label: d.label, source: d.source, protocol: d.protocol, chain: d.chain, amount: usdValue, usdValue });
+      } else {
+        groupMap[group].push({ id: d.id, label: d.label, source: d.source, protocol: d.protocol, chain: d.chain, amount: d.amount, usdValue });
+      }
     }
   }
 
