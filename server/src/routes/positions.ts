@@ -318,7 +318,7 @@ async function _fetchPositionsAggregateImpl() {
       label: asset.label,
       source: 'cex_manual',
       amount: asset.amount,
-      usdValue: 0, // manual assets don't have auto price calc yet
+      usdValue: 0,
     });
   }
 
@@ -331,13 +331,19 @@ async function _fetchPositionsAggregateImpl() {
     }
   }
 
-  // 7. Build TokenPosition array
-  const positions: TokenPosition[] = Object.entries(groupMap).map(([baseToken, subs]) => ({
-    baseToken,
-    subPositions: subs,
-    totalAmount: subs.reduce((s, p) => s + p.amount, 0),
-    totalUsdValue: subs.reduce((s, p) => s + p.usdValue, 0),
-  }));
+  // 7. Build TokenPosition array; price manual assets inline (STABLE @ $1, others use group key price)
+  const positions: TokenPosition[] = Object.entries(groupMap).map(([baseToken, subs]) => {
+    const unitUsd = baseToken === 'STABLE' ? 1 : (prices[baseToken] ?? 0);
+    for (const p of subs) {
+      if (p.source === 'cex_manual') p.usdValue = p.amount * unitUsd;
+    }
+    return {
+      baseToken,
+      subPositions: subs,
+      totalAmount: subs.reduce((s, p) => s + p.amount, 0),
+      totalUsdValue: subs.reduce((s, p) => s + p.usdValue, 0),
+    };
+  });
   const incomeBreakdown = buildIncomeBreakdown(positions);
   return {
     positions,

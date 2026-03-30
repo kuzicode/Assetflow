@@ -410,12 +410,16 @@ router.put('/:id', (req, res) => {
   const nextReturnRate = returnRate ?? computed.returnRate;
   const nextAnnualizedReturn = annualizedReturn ?? computed.annualizedReturn;
 
+  const monthlyStillInProgress = existing.period === 'monthly' && existing.status === 'in_progress';
   const nextStatus =
     existing.period === 'monthly'
-      ? 'locked'
+      ? (monthlyStillInProgress ? 'in_progress' : 'locked')
       : (existing.status === 'in_progress' ? 'in_progress' : 'settled');
-  const nextAutoAccumulate = existing.period === 'monthly' ? 0 : (existing.status === 'in_progress' ? 1 : 0);
-  const nextEditable = existing.period === 'monthly' ? 0 : (existing.status === 'in_progress' ? 1 : 0);
+  const nextActive = existing.period === 'monthly'
+    ? (monthlyStillInProgress ? 1 : 0)
+    : (existing.status === 'in_progress' ? 1 : 0);
+  const nextAutoAccumulate = nextActive;
+  const nextEditable = nextActive;
 
   db.prepare(`
     UPDATE pnl_records SET
@@ -475,6 +479,7 @@ function formatPnlRecord(r: any) {
     incomeHlp: r.income_hlp || 0,
     incomeTotal: r.income_total || 0,
     lastAutoUpdateAt: r.last_auto_update_at || null,
+    basePnl: r.base_pnl != null ? Number(r.base_pnl) : 0,
   };
 }
 
@@ -499,7 +504,7 @@ async function fetchIncomeBreakdownSafe() {
     return data.incomeBreakdown;
   } catch (error: any) {
     console.error('[PnL] Failed to fetch income breakdown:', error.message);
-    return { uniswap: 0, morpho: 0, hlp: 0, total: 0 };
+    return null;
   }
 }
 
@@ -511,6 +516,10 @@ export async function runDailyPnlAutoAccumulate(today = getTodayUtcDate()) {
   if (records.length === 0) return { updated: 0 };
 
   const income = await fetchIncomeBreakdownSafe();
+  if (income == null) {
+    console.error('[PnL] Daily accumulate skipped: could not fetch income breakdown');
+    return { updated: 0 };
+  }
   let updated = 0;
 
   for (const record of records) {

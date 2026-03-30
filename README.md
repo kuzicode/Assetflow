@@ -162,7 +162,24 @@ make start        # 生产启动（非 systemd）
 make dev          # 前后端开发并行
 make test         # 后端 Vitest
 make lint         # 前端 ESLint
+make db-pull      # 从生产服务器同步数据库到本地（见下方说明）
 ```
+
+---
+
+## 5.1 从生产服务器同步数据库
+
+数据库文件（`server/data/assetflow.db`）不进 git，本地开发时如需与生产数据对齐，执行：
+
+```bash
+make db-pull
+```
+
+- 默认 SSH 别名为 `xw`，无需停止服务器进程，使用 SQLite 在线热备份保证数据一致性。
+- 如需指定其他 SSH 别名：`make db-pull REMOTE=yourhost`
+- 拉取完成后直接覆盖本地 `server/data/assetflow.db`，重启本地开发服务器即生效。
+
+> 注意：此操作为单向同步（服务器 → 本地），不会影响服务器数据，也不涉及 git。
 
 ---
 

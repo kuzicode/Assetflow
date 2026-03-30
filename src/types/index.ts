@@ -51,6 +51,8 @@ export interface PnlRecord {
   incomeHlp?: number;
   incomeTotal?: number;
   lastAutoUpdateAt?: string | null;
+  /** 月度专用：已结算周累计入袋的 pnl（API `basePnl`） */
+  basePnl?: number;
 }
 
 // --- 收益总览 ---

@@ -3,15 +3,19 @@ import { createTestDb } from '../test/setup.js';
 import request from 'supertest';
 import { v4 as uuidv4 } from 'uuid';
 
-const testDb = createTestDb();
-vi.mock('../db/index.js', () => ({ default: testDb }));
-vi.mock('./positions.js', () => ({
-  fetchPositionsAggregate: vi.fn(async () => ({
+const { mockFetchPositionsAggregate } = vi.hoisted(() => ({
+  mockFetchPositionsAggregate: vi.fn(async () => ({
     positions: [],
     prices: {},
     timestamp: new Date().toISOString(),
     incomeBreakdown: { uniswap: 100, morpho: 200, hlp: 300, total: 600 },
   })),
+}));
+
+const testDb = createTestDb();
+vi.mock('../db/index.js', () => ({ default: testDb }));
+vi.mock('./positions.js', () => ({
+  fetchPositionsAggregate: mockFetchPositionsAggregate,
 }));
 
 const { default: express } = await import('express');
@@ -133,16 +137,16 @@ describe('PnL API', () => {
       expect(res.body.editable).toBe(true);
     });
 
-    it('locks monthly row after manual edit save', async () => {
+    it('keeps monthly in_progress after manual edit save', async () => {
       const monthly = await request(app).get('/api/pnl/monthly');
       const inProgress = monthly.body.find((r: any) => r.status === 'in_progress');
       const res = await request(app)
         .put(`/api/pnl/${inProgress.id}`)
         .send({ pnl: 1234, days: 10 });
       expect(res.status).toBe(200);
-      expect(res.body.status).toBe('locked');
-      expect(res.body.autoAccumulate).toBe(false);
-      expect(res.body.editable).toBe(false);
+      expect(res.body.status).toBe('in_progress');
+      expect(res.body.autoAccumulate).toBe(true);
+      expect(res.body.editable).toBe(true);
     });
   });
 
@@ -162,6 +166,21 @@ describe('PnL API', () => {
 
       const run2 = await runDailyPnlAutoAccumulate('2026-03-10');
       expect(run2.updated).toBe(0);
+    });
+
+    it('does not overwrite PnL when income fetch fails', async () => {
+      const weekly = await request(app).get('/api/pnl/weekly');
+      const inProgress = weekly.body.find((r: any) => r.status === 'in_progress');
+      expect(inProgress).toBeTruthy();
+      const pnlBefore = inProgress.pnl;
+
+      mockFetchPositionsAggregate.mockRejectedValueOnce(new Error('network down'));
+      const run = await runDailyPnlAutoAccumulate('2026-03-12');
+      expect(run.updated).toBe(0);
+
+      const after = await request(app).get('/api/pnl/weekly');
+      const row = after.body.find((r: any) => r.id === inProgress.id);
+      expect(row.pnl).toBe(pnlBefore);
     });
   });
 
