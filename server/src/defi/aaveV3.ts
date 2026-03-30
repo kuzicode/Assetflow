@@ -29,7 +29,7 @@ const RAY = 10n ** 27n;
 export async function fetchAaveV3Balances(
   chain: string,
   address: string,
-  provider: ethers.JsonRpcProvider
+  provider: ethers.Provider
 ): Promise<AavePosition[]> {
   const uiPoolAddr = AAVE_UI_POOL_DATA_PROVIDERS[chain];
   const poolProviderAddr = AAVE_POOL_ADDRESSES_PROVIDERS[chain];

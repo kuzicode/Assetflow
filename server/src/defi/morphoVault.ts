@@ -32,7 +32,7 @@ export interface MorphoVaultPosition {
 export async function fetchMorphoVaultBalances(
   chain: string,
   address: string,
-  provider: ethers.JsonRpcProvider,
+  provider: ethers.Provider,
   vaultAddresses: string[]
 ): Promise<MorphoVaultPosition[]> {
   const positions: MorphoVaultPosition[] = [];

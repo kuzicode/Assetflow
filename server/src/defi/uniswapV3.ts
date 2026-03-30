@@ -90,7 +90,7 @@ export function tickToSqrtPriceX96(tick: number): bigint {
 export async function fetchUniswapV3Positions(
   chain: string,
   address: string,
-  provider: ethers.JsonRpcProvider
+  provider: ethers.Provider
 ): Promise<UniV3Position[]> {
   const nftAddr = UNISWAP_V3_POSITION_MANAGER[chain];
   const factoryAddr = UNISWAP_V3_FACTORY[chain];

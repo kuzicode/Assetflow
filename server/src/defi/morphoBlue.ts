@@ -29,7 +29,7 @@ export interface MorphoPosition {
 export async function fetchMorphoBlueBalances(
   chain: string,
   address: string,
-  provider: ethers.JsonRpcProvider,
+  provider: ethers.Provider,
   marketIds: string[]
 ): Promise<MorphoPosition[]> {
   const morphoAddr = MORPHO_BLUE_ADDRESS[chain];
