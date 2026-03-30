@@ -1,10 +1,13 @@
 import { ethers } from 'ethers';
 import { UNISWAP_V3_POSITION_MANAGER, UNISWAP_V3_FACTORY } from '../config/defi.js';
 
+const MAX_UINT128 = 2n ** 128n - 1n;
+
 const POSITION_MANAGER_ABI = [
   'function balanceOf(address owner) view returns (uint256)',
   'function tokenOfOwnerByIndex(address owner, uint256 index) view returns (uint256)',
   'function positions(uint256 tokenId) view returns (uint96 nonce, address operator, address token0, address token1, uint24 fee, int24 tickLower, int24 tickUpper, uint128 liquidity, uint256 feeGrowthInside0LastX128, uint256 feeGrowthInside1LastX128, uint128 tokensOwed0, uint128 tokensOwed1)',
+  'function collect((uint256 tokenId, address recipient, uint128 amount0Max, uint128 amount1Max) params) returns (uint256 amount0, uint256 amount1)',
 ];
 
 const FACTORY_ABI = [
@@ -104,9 +107,11 @@ export async function fetchUniswapV3Positions(
     const count = Number(balance);
     if (count === 0) return [];
 
-    // Fetch each position
+    // Fetch each position (sequential with delay to avoid RPC rate limiting)
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     const tokenIds: number[] = [];
     for (let i = 0; i < count; i++) {
+      if (i > 0) await sleep(200);
       const tokenId = await nft.tokenOfOwnerByIndex(address, i);
       tokenIds.push(Number(tokenId));
     }
@@ -154,9 +159,21 @@ export async function fetchUniswapV3Positions(
             }
           }
 
-          // Unclaimed fees
-          const fees0 = parseFloat(ethers.formatUnits(pos.tokensOwed0, Number(decimals0)));
-          const fees1 = parseFloat(ethers.formatUnits(pos.tokensOwed1, Number(decimals1)));
+          // Unclaimed fees — use collect staticCall to get all pending fees (including pool-accrued)
+          let fees0 = 0;
+          let fees1 = 0;
+          try {
+            const collected = await nft.collect.staticCall(
+              { tokenId, recipient: address, amount0Max: MAX_UINT128, amount1Max: MAX_UINT128 },
+              { from: address }
+            );
+            fees0 = parseFloat(ethers.formatUnits(collected.amount0, Number(decimals0)));
+            fees1 = parseFloat(ethers.formatUnits(collected.amount1, Number(decimals1)));
+          } catch (feeErr: any) {
+            console.warn(`[UniV3] collect.staticCall failed for tokenId=${tokenId}: ${feeErr.message?.slice(0, 80)}, falling back to tokensOwed`);
+            fees0 = parseFloat(ethers.formatUnits(pos.tokensOwed0, Number(decimals0)));
+            fees1 = parseFloat(ethers.formatUnits(pos.tokensOwed1, Number(decimals1)));
+          }
 
           positions.push({
             protocol: 'Uniswap V3',

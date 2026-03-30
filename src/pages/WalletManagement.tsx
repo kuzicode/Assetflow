@@ -10,6 +10,13 @@ const CHAIN_TYPES = [
 
 const EVM_CHAINS = ['ethereum', 'arbitrum', 'optimism', 'base', 'polygon', 'bsc', 'avalanche'];
 
+function getAddressUrl(address: string, chains: string[]): string | null {
+  if (chains.includes('bitcoin')) return `https://mempool.space/address/${address}`;
+  if (chains.includes('solana')) return `https://jup.ag/portfolio/${address}`;
+  if (address.startsWith('0x') && address.length === 42) return `https://debank.com/profile/${address}`;
+  return null;
+}
+
 function resolveChains(chainType: string): string[] {
   if (chainType === 'EVM') return EVM_CHAINS;
   if (chainType === 'BTC') return ['bitcoin'];
@@ -259,9 +266,20 @@ export default function WalletManagement() {
                         <span className="text-sm text-on-surface-variant/40">—</span>
                       </td>
                       <td className="px-8 py-5">
-                        <code className="text-sm font-mono text-outline bg-surface-container px-3 py-1 rounded-lg">
-                          {w.address.slice(0, 6)}...{w.address.slice(-4)}
-                        </code>
+                        {(() => {
+                          const url = getAddressUrl(w.address, w.chains || []);
+                          const label = `${w.address.slice(0, 6)}...${w.address.slice(-4)}`;
+                          return url ? (
+                            <a href={url} target="_blank" rel="noopener noreferrer"
+                              className="text-sm font-mono text-primary bg-surface-container px-3 py-1 rounded-lg hover:bg-primary/10 transition-colors">
+                              {label}
+                            </a>
+                          ) : (
+                            <code className="text-sm font-mono text-outline bg-surface-container px-3 py-1 rounded-lg">
+                              {label}
+                            </code>
+                          );
+                        })()}
                       </td>
                       <td className="px-8 py-5 text-center">
                         <span className="px-4 py-1.5 bg-secondary-container text-on-secondary-container rounded-full text-[10px] font-bold tracking-widest whitespace-nowrap">

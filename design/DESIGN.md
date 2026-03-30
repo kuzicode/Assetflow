@@ -200,7 +200,9 @@ interface AppStore {
 interface SubPosition {
   id: string;
   label: string;                   // 例: "主钱包-ETH/USDC-仓位"
-  source: 'wallet' | 'lp' | 'lp_fees' | 'lending' | 'cex_manual';
+  source: 'wallet' | 'lp' | 'lp_fees' | 'lending' | 'hlp' | 'cex_manual';
+  // lp_fees: Uniswap V3 未领取手续费（通过 collect.staticCall 读取）
+  // hlp: Hyperliquid HLP Vault 权益
   protocol?: string;               // Uniswap V3 / Aave V3 / Morpho...
   chain?: string;                  // ethereum / arbitrum / base...
   amount: number;
@@ -298,22 +300,33 @@ server/src/
 ```
 1. 读取 DB 中所有已配置钱包
 
-2. 并行获取每个钱包的链上数据：
+2. 按钱包类型走不同路径：
+
+   【EVM 直查路径（非 OKX）】
+   并行获取每个钱包的链上数据：
    ├── EVM 余额（原生代币 + ERC20）
-   ├── Uniswap V3 LP 持仓 + 未收取手续费
+   ├── Uniswap V3 LP 持仓（本金量） + 未收取手续费（collect.staticCall）
    ├── Aave V3 存款/借款余额
    ├── Morpho Blue 市场持仓
    ├── Morpho Vault (ERC-4626) 份额
    └── Hyperliquid HLP Vault 权益（REST API）
 
+   【OKX Web3 路径】
+   通过 OKX API 批量获取代币余额（含 LP 本金），再补充：
+   ├── Hyperliquid HLP：Hyperliquid REST API（OKX 不含 HLP）
+   └── Uniswap V3 手续费：直接调用 EVM RPC collect.staticCall
+       （OKX API 将手续费混入本金，无法拆分，需单独读链上）
+
 3. 从 settings 表读取 Morpho 市场 ID 和 Vault 地址
 
 4. 汇总所有代币符号 → 一次性调用 Binance 获取价格
-   └── 稳定币直接返回 $1，不发请求
+   ├── 稳定币直接返回 $1，不发请求
+   ├── 同时写入分组级价格 key（如 cbBTC→BTC，stETH→ETH）
+   └── ETH/BTC/BNB 基础价格兜底：若 Binance 未返回则重试
 
 5. 按基础资产分组：
-   STABLE（USDT/USDC/DAI...）/ ETH（ETH/WETH/stETH...）
-   BTC（BTC/WBTC/cbBTC...）/ BNB（BNB/WBNB）/ 其他
+   STABLE（USDT/USDC/DAI...）/ ETH（ETH/WETH/stETH/cbETH...）
+   BTC（BTC/WBTC/cbBTC/tBTC...）/ BNB（BNB/WBNB）/ 其他
 
 6. 读取手动资产（CEX 余额等），合并到对应分组
 
@@ -325,11 +338,13 @@ server/src/
 | 协议 | 查询方式 | 说明 |
 |------|---------|------|
 | EVM Balance | `provider.getBalance()` + `contract.balanceOf()` | 原生代币 + 硬编码 ERC20 列表 |
-| Uniswap V3 | NFT Position Manager + Factory + Pool slot0 | 用 V3 数学公式计算持仓量 |
+| Uniswap V3 本金 | NFT Position Manager + Factory + Pool slot0 | 用 V3 数学公式计算持仓量 |
+| Uniswap V3 手续费 | `nft.collect.staticCall({amount0Max, amount1Max})` | 读取 pool 累积的全量未领手续费（含 pool 未同步到 tokensOwed 的部分） |
 | Aave V3 | UI Pool Data Provider | 含缩放后的 aToken 换算 |
 | Morpho Blue | `morpho.position()` + `morpho.market()` | shares → assets 换算 |
 | Morpho Vault | ERC-4626 `balanceOf` + `convertToAssets` | 份额换算为底层资产 |
 | Hyperliquid | REST POST `api.hyperliquid.xyz/info` | 获取 HLP Vault 权益 |
+| OKX Web3 | OKX Web3 API 批量余额 | 支持多链汇总，LP 含本金+手续费混合 |
 
 ---
 
@@ -361,26 +376,57 @@ if (lowerBound < currentPrice < upperBound):
 
 ## 9. P&L 计算模型
 
-系统支持两种价值口径：
+### 双口径估值
 
 | 口径 | 含义 | 计算方式 |
 |------|------|---------|
 | **公允价值（Fair Value）** | 以投入本金估算 LP 价值 | LP 以原始投入金额计算，忽略无常损失 |
 | **现金价值（Cash Value）** | 实际可变现金额 | LP 按当前市场价格计算，反映无常损失 |
 
-**P&L 公式**：
+公允价值不含无常损失；现金价值含无常损失及已实现损益。
 
+### 周度 P&L：仅追踪 LP 手续费 + HLP + Morpho 增量
+
+**设计原则**：周度收益只反映"收入增量"（协议手续费、HLP 权益、Morpho 利息），不含本金涨跌和无常损失。
+
+**周开始基准（`last_*_value`）**：
+- 每次创建新周记录时，先成功 fetch 当前持仓聚合数据，将 uniswap/morpho/hlp 三项当前值写入 `last_*_value` 作为本周基准。
+- 若 fetch 失败则拒绝创建（避免零基准导致下一次计算出虚假巨额收益）。
+
+**每日自动快照（`runDailyPnlAutoAccumulate`）**：
 ```
-pnl = endingCapital - startingCapital
-returnRate = pnl / startingCapital
-annualizedReturn = returnRate / days * 365
+weekUniswap = max(0, income.uniswap - record.last_uniswap_value)
+weekMorpho  = max(0, income.morpho  - record.last_morpho_value)
+weekHlp     = max(0, income.hlp     - record.last_hlp_value)
+nextPnl = weekUniswap + weekMorpho + weekHlp
 ```
+- **SET 不累加**：每次覆盖写入（从周初基准重新算到今天），避免误差累积。
+- **`last_*_value` 不更新**：始终保持周初快照，仅在新建记录时写入。
+- LP 手续费设计：若当前手续费低于基准（如已手动提取），则当周该部分收益记为 0（max(0,...)），下次结算时自然从 0 重新开始累积。
 
-**快照机制**：
+**周度结算（settlement）**：
+- 将本周 pnl 烘入月度 `base_pnl`（`bakeWeeklyPnlIntoMonthly()`）
+- 将本周状态从 `in_progress` → `settled`
+- 创建下一周新记录，重新 fetch 当前基准
 
-- 每次触发快照，记录当前所有持仓数据和价格到 `snapshots` 表
-- P&L 计算从最近两个快照提取 `total_fair_value` 差值
-- 支持手动修正（`is_adjusted` 标记）
+### 月度 P&L：base_pnl + 在途周度
+
+月度 pnl 由两部分构成：
+```
+monthly.pnl = base_pnl + current_in_progress_weekly.pnl
+```
+- `base_pnl`：所有已结算周的 pnl 之和（每次周结算时累加写入，之后不变）
+- `current_in_progress_weekly.pnl`：当前在途周的实时 pnl（每日快照时只读取，不修改 base_pnl）
+
+月度 `end_date` 每日同步到当天（`syncMonthlyInProgressFromWeekly()`），已结算月不变。
+
+### 收益来源分类（`buildIncomeBreakdown`）
+
+| 来源 | source 标识 | 说明 |
+|------|------------|------|
+| Uniswap LP 手续费 | `lp_fees` | collect.staticCall 读取的未领手续费，U 本位计算 |
+| Morpho 利息 | 所有 morpho 协议持仓合计 | 存款利息（Morpho Blue + Vault） |
+| Hyperliquid HLP | `hlp` | HLP Vault 权益变动 |
 
 ---
 
@@ -395,8 +441,23 @@ snapshots (id, timestamp, type, total_fair_value, total_cash_value, positions_js
 INDEX ON (timestamp)
 
 -- P&L 记录（周度/月度）
-pnl_records (id, period, start_date, end_date, starting_capital, ending_capital,
-             pnl, return_rate, days, annualized_return, is_adjusted)
+pnl_records (
+  id, period, start_date, end_date, starting_capital, ending_capital,
+  pnl, return_rate, days, annualized_return, is_adjusted,
+  -- 收入拆分（周度）
+  income_uniswap,    -- 本周 Uniswap LP 手续费增量（U本位）
+  income_morpho,     -- 本周 Morpho 利息增量
+  income_hlp,        -- 本周 HLP 权益增量
+  income_total,      -- 三项合计
+  -- 周初基准（创建时写入，之后不变）
+  last_uniswap_value,
+  last_morpho_value,
+  last_hlp_value,
+  -- 月度专用
+  base_pnl,          -- 已结算周的 pnl 累计（月度用），周结算时 bake 进来
+  -- 状态
+  status             -- 'in_progress' | 'settled'
+)
 INDEX ON (period, start_date)
 
 -- 收益总览（单行，手动维护）
@@ -464,6 +525,13 @@ vi.mock('../db/index.js', () => ({ default: testDb }));
 
 RPC 端点使用公共节点（llamarpc、arbitrum.io 等），无需配置 API Key。
 
+**RPC 可靠性（FallbackProvider）**：Ethereum 支持通过环境变量 `ETH_RPC_FALLBACK` 配置备用节点（如 Alchemy），当公共节点失败时自动切换：
+```
+createProvider('ethereum') →
+  FallbackProvider([llamarpc (priority 1), alchemy (priority 2)], stallTimeout=2000ms)
+```
+其他链暂时只有公共节点。公共节点有速率限制，Uniswap V3 的 `tokenOfOwnerByIndex` 循环调用之间加 200ms 间隔。
+
 ### DeFi 协议合约地址
 
 | 协议 | 合约类型 | 地址 |
@@ -475,7 +543,22 @@ RPC 端点使用公共节点（llamarpc、arbitrum.io 等），无需配置 API 
 
 ---
 
-## 13. 部署架构
+## 13. 钱包地址浏览器链接
+
+钱包管理页的地址列渲染为可点击链接，规则如下：
+
+| 地址类型 | 链接目标 |
+|---------|---------|
+| 包含 `bitcoin` 链 | `https://mempool.space/address/{address}` |
+| 包含 `solana` 链 | `https://jup.ag/portfolio/{address}` |
+| `0x` 开头 + 42 字符（EVM） | `https://debank.com/profile/{address}` |
+| 其他 | 纯文本显示 |
+
+逻辑位于 `src/pages/WalletManagement.tsx` 的 `getAddressUrl()` 函数。
+
+---
+
+## 14. 部署架构
 
 ### 开发模式
 

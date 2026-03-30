@@ -7,6 +7,8 @@ const binance = new ccxt.binance();
 const SYMBOL_MAP: Record<string, string> = {
   WETH: 'ETH',
   WBTC: 'BTC',
+  cbBTC: 'BTC',
+  tBTC: 'BTC',
   WBNB: 'BNB',
   stETH: 'ETH',
   wstETH: 'ETH',
@@ -55,6 +57,8 @@ export async function fetchPrices(symbols: string[]): Promise<Record<string, num
 
       if (tickers[tickerKey]?.last) {
         prices[sym] = tickers[tickerKey].last;
+        // Also set the canonical mapped symbol so group-level lookups (e.g. prices['BTC']) work
+        if (mapped !== sym && !prices[mapped]) prices[mapped] = tickers[tickerKey].last;
       } else {
         prices[sym] = 0;
       }

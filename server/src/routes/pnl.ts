@@ -27,27 +27,62 @@ function recalcByPnl(startingCapital: number, pnl: number, days: number) {
   return { endingCapital, returnRate, annualizedReturn };
 }
 
-function syncMonthlyInProgressEndDate(targetEndDate: string) {
+// 将结算的周 pnl 打入月度 base_pnl（只在周记录结算时调用）
+function bakeWeeklyPnlIntoMonthly(settledWeeklyPnl: number, weekEndDate: string) {
   const monthlyInProgress: any = db.prepare(
     "SELECT * FROM pnl_records WHERE period = 'monthly' AND status = 'in_progress' ORDER BY start_date DESC LIMIT 1"
   ).get();
   if (!monthlyInProgress) return;
-  if (!monthlyInProgress.end_date || monthlyInProgress.end_date >= targetEndDate) return;
 
-  const nextDays = diffDaysUtc(monthlyInProgress.start_date, targetEndDate);
-  const metrics = recalcByPnl(monthlyInProgress.starting_capital, monthlyInProgress.pnl || 0, nextDays);
+  const newBase = (monthlyInProgress.base_pnl || 0) + settledWeeklyPnl;
+  const nextDays = diffDaysUtc(monthlyInProgress.start_date, weekEndDate);
+  const metrics = recalcByPnl(monthlyInProgress.starting_capital, newBase, nextDays);
   db.prepare(`
     UPDATE pnl_records
-    SET end_date = ?, days = ?, annualized_return = ?, return_rate = ?, ending_capital = ?
+    SET base_pnl = ?, pnl = ?, end_date = ?, days = ?,
+        annualized_return = ?, return_rate = ?, ending_capital = ?
     WHERE id = ?
-  `).run(
-    targetEndDate,
-    nextDays,
-    metrics.annualizedReturn,
-    metrics.returnRate,
-    metrics.endingCapital,
-    monthlyInProgress.id
-  );
+  `).run(newBase, newBase, weekEndDate, nextDays,
+    metrics.annualizedReturn, metrics.returnRate, metrics.endingCapital,
+    monthlyInProgress.id);
+}
+
+// 用当前进行中的周 pnl 更新月度（base_pnl 不变，只更新 end_date 和合计）
+function syncMonthlyInProgressFromWeekly(targetEndDate: string) {
+  const monthlyInProgress: any = db.prepare(
+    "SELECT * FROM pnl_records WHERE period = 'monthly' AND status = 'in_progress' ORDER BY start_date DESC LIMIT 1"
+  ).get();
+  if (!monthlyInProgress) return;
+
+  const monthStart = monthlyInProgress.start_date;
+  const nextMonthStart = new Date(new Date(`${monthStart}T00:00:00Z`).setUTCMonth(
+    new Date(`${monthStart}T00:00:00Z`).getUTCMonth() + 1
+  )).toISOString().slice(0, 10);
+
+  // 只取当月当前进行中的周
+  const inProgressWeekly: any = db.prepare(`
+    SELECT * FROM pnl_records
+    WHERE period = 'weekly' AND status = 'in_progress'
+      AND start_date >= ? AND start_date < ?
+    ORDER BY start_date DESC LIMIT 1
+  `).get(monthStart, nextMonthStart);
+
+  const inProgressPnl = inProgressWeekly ? (inProgressWeekly.pnl || 0) : 0;
+  const finalEndDate = (inProgressWeekly?.end_date || targetEndDate) > targetEndDate
+    ? (inProgressWeekly?.end_date || targetEndDate)
+    : targetEndDate;
+
+  const totalPnl = (monthlyInProgress.base_pnl || 0) + inProgressPnl;
+  const nextDays = diffDaysUtc(monthStart, finalEndDate);
+  const metrics = recalcByPnl(monthlyInProgress.starting_capital, totalPnl, nextDays);
+
+  db.prepare(`
+    UPDATE pnl_records
+    SET end_date = ?, days = ?, pnl = ?, annualized_return = ?, return_rate = ?, ending_capital = ?
+    WHERE id = ?
+  `).run(finalEndDate, nextDays, totalPnl,
+    metrics.annualizedReturn, metrics.returnRate, metrics.endingCapital,
+    monthlyInProgress.id);
 }
 
 function ensurePnlRecordColumns() {
@@ -68,6 +103,7 @@ function ensurePnlRecordColumns() {
   add('last_morpho_value', 'ALTER TABLE pnl_records ADD COLUMN last_morpho_value REAL NOT NULL DEFAULT 0');
   add('last_hlp_value', 'ALTER TABLE pnl_records ADD COLUMN last_hlp_value REAL NOT NULL DEFAULT 0');
   add('last_auto_update_at', 'ALTER TABLE pnl_records ADD COLUMN last_auto_update_at TEXT');
+  add('base_pnl', 'ALTER TABLE pnl_records ADD COLUMN base_pnl REAL NOT NULL DEFAULT 0');
 
   for (const sql of alters) db.exec(sql);
   db.exec("UPDATE pnl_records SET status = 'settled' WHERE status IS NULL OR status = ''");
@@ -141,6 +177,8 @@ router.post('/weekly', async (req, res) => {
       SET status = 'settled', auto_accumulate = 0, editable = 0
       WHERE id = ?
     `).run(weeklyInProgress.id);
+    // 将结算周的最终 pnl 打入月度 base
+    bakeWeeklyPnlIntoMonthly(weeklyInProgress.pnl || 0, weeklyInProgress.end_date || getTodayUtcDate());
   }
 
   const creatingHistoricalSettled = !!endDate && (pnl != null || days != null);
@@ -148,7 +186,13 @@ router.post('/weekly', async (req, res) => {
   const autoAccumulate = creatingHistoricalSettled ? 0 : 1;
   const editable = creatingHistoricalSettled ? 0 : 1;
   const isAdjusted = creatingHistoricalSettled ? 1 : 0;
-  const income = await fetchIncomeBreakdownSafe();
+  let income;
+  try {
+    const data = await fetchPositionsAggregate();
+    income = data.incomeBreakdown;
+  } catch (error: any) {
+    return res.status(500).json({ error: `Failed to fetch income baseline: ${error.message}. Cannot create weekly record without a valid income baseline.` });
+  }
 
   db.prepare(`
     INSERT INTO pnl_records (
@@ -179,7 +223,7 @@ router.post('/weekly', async (req, res) => {
   );
 
   const created = db.prepare('SELECT * FROM pnl_records WHERE id = ?').get(id) as any;
-  syncMonthlyInProgressEndDate(finalEndDate);
+  syncMonthlyInProgressFromWeekly(finalEndDate);
   res.json(formatPnlRecord(created));
 });
 
@@ -308,7 +352,13 @@ router.post('/monthly', async (req, res) => {
     }
   }
 
-  const income = await fetchIncomeBreakdownSafe();
+  let income;
+  try {
+    const data = await fetchPositionsAggregate();
+    income = data.incomeBreakdown;
+  } catch (error: any) {
+    return res.status(500).json({ error: `Failed to fetch income baseline: ${error.message}. Cannot create monthly record without a valid income baseline.` });
+  }
   db.prepare(`
     INSERT INTO pnl_records (
       id, period, start_date, end_date, starting_capital, ending_capital, pnl, return_rate, days, annualized_return, is_adjusted,
@@ -399,7 +449,7 @@ router.put('/:id', (req, res) => {
 
   const updated: any = db.prepare('SELECT * FROM pnl_records WHERE id = ?').get(req.params.id);
   if (existing.period === 'weekly' && (req.body.endDate || updated?.end_date)) {
-    syncMonthlyInProgressEndDate(req.body.endDate || updated.end_date);
+    syncMonthlyInProgressFromWeekly(req.body.endDate || updated.end_date);
   }
   res.json(formatPnlRecord(updated));
 });
@@ -465,12 +515,14 @@ export async function runDailyPnlAutoAccumulate(today = getTodayUtcDate()) {
 
   for (const record of records) {
     if (record.last_auto_update_at === today) continue;
-    const dayDeltaUniswap = Math.max(0, income.uniswap - (record.last_uniswap_value || 0));
-    const dayDeltaMorpho = Math.max(0, income.morpho - (record.last_morpho_value || 0));
-    const dayDeltaHlp = Math.max(0, income.hlp - (record.last_hlp_value || 0));
-    const dayDeltaTotal = dayDeltaUniswap + dayDeltaMorpho + dayDeltaHlp;
 
-    const nextPnl = (record.pnl || 0) + dayDeltaTotal;
+    // 新逻辑：pnl = 当前值 - 本周起始基准（覆盖写，不累加）
+    // last_uniswap/morpho/hlp_value 存的是建周时的基准，整周不变
+    const weekUniswap = Math.max(0, income.uniswap - (record.last_uniswap_value || 0));
+    const weekMorpho  = Math.max(0, income.morpho  - (record.last_morpho_value  || 0));
+    const weekHlp     = Math.max(0, income.hlp     - (record.last_hlp_value     || 0));
+    const nextPnl     = weekUniswap + weekMorpho + weekHlp;
+
     const days = diffDaysUtc(record.start_date, today);
     const metrics = recalcByPnl(record.starting_capital, nextPnl, days);
 
@@ -482,13 +534,10 @@ export async function runDailyPnlAutoAccumulate(today = getTodayUtcDate()) {
         return_rate = ?,
         days = ?,
         annualized_return = ?,
-        income_uniswap = COALESCE(income_uniswap, 0) + ?,
-        income_morpho = COALESCE(income_morpho, 0) + ?,
-        income_hlp = COALESCE(income_hlp, 0) + ?,
-        income_total = COALESCE(income_total, 0) + ?,
-        last_uniswap_value = ?,
-        last_morpho_value = ?,
-        last_hlp_value = ?,
+        income_uniswap = ?,
+        income_morpho = ?,
+        income_hlp = ?,
+        income_total = ?,
         last_auto_update_at = ?
       WHERE id = ?
     `).run(
@@ -498,18 +547,19 @@ export async function runDailyPnlAutoAccumulate(today = getTodayUtcDate()) {
       metrics.returnRate,
       days,
       metrics.annualizedReturn,
-      dayDeltaUniswap,
-      dayDeltaMorpho,
-      dayDeltaHlp,
-      dayDeltaTotal,
-      income.uniswap,
-      income.morpho,
-      income.hlp,
+      weekUniswap,
+      weekMorpho,
+      weekHlp,
+      nextPnl,
       today,
       record.id
     );
     updated += 1;
   }
+
+  // 每次周数据更新后，同步月度 in_progress 记录
+  if (updated > 0) syncMonthlyInProgressFromWeekly(today);
+
   return { updated };
 }
 

@@ -115,7 +115,10 @@ export async function fetchPositionsAggregate() {
 
           // Derive spot price from OKX snapshot
           if (t.symbol && t.amount && t.amount > 0 && t.usdValue && t.usdValue > 0) {
-            putPrice(t.symbol, t.usdValue / t.amount);
+            const spotPrice = t.usdValue / t.amount;
+            putPrice(t.symbol, spotPrice);
+            // Also set group-level price (e.g. 'BTC') so frontend prices['BTC'] works
+            if (group !== 'STABLE' && group !== t.symbol) putPrice(group, spotPrice);
           }
           if (group === 'STABLE') putPrice('STABLE', 1);
 
@@ -162,6 +165,56 @@ export async function fetchPositionsAggregate() {
           }
         } catch (e: any) {
           console.error(`[HLP] Failed wallet ${wallet.label}:`, e.message);
+        }
+
+        // Uniswap V3 LP fees — OKX bundles fees+principal together, fetch fees separately via RPC
+        const evmChains = wallet.chains.filter((c: string) =>
+          ['ethereum', 'arbitrum', 'optimism', 'base', 'polygon', 'bsc', 'avalanche'].includes(c)
+        );
+        for (const chain of evmChains) {
+          try {
+            const provider = createProvider(chain);
+            if (!provider) continue;
+            const uniPositions = await fetchUniswapV3Positions(chain, wallet.address, provider);
+            for (const pos of uniPositions) {
+              const ethPrice = prices['ETH'] || prices['WETH'] || 0;
+              const stablePrice = 1;
+              // token0 fees
+              if (pos.fees0 > 0.000001) {
+                const sym0 = pos.token0Symbol;
+                const price0 = STABLECOIN_SYMBOLS.includes(sym0) ? stablePrice : (prices[sym0] || ethPrice);
+                const group0 = getBaseTokenGroup(sym0);
+                if (!groupMap[group0]) groupMap[group0] = [];
+                groupMap[group0].push({
+                  id: uuidv4(),
+                  label: `${wallet.label}-${pos.token0Symbol}/${pos.token1Symbol}-手续费`,
+                  source: 'lp_fees',
+                  protocol: 'Uniswap V3',
+                  chain,
+                  amount: pos.fees0,
+                  usdValue: pos.fees0 * price0,
+                });
+              }
+              // token1 fees
+              if (pos.fees1 > 0.000001) {
+                const sym1 = pos.token1Symbol;
+                const price1 = STABLECOIN_SYMBOLS.includes(sym1) ? stablePrice : (prices[sym1] || ethPrice);
+                const group1 = getBaseTokenGroup(sym1);
+                if (!groupMap[group1]) groupMap[group1] = [];
+                groupMap[group1].push({
+                  id: uuidv4(),
+                  label: `${wallet.label}-${pos.token0Symbol}/${pos.token1Symbol}-手续费`,
+                  source: 'lp_fees',
+                  protocol: 'Uniswap V3',
+                  chain,
+                  amount: pos.fees1,
+                  usdValue: pos.fees1 * price1,
+                });
+              }
+            }
+          } catch (e: any) {
+            console.error(`[UniV3 fees] Failed ${chain}/${wallet.label}:`, e.message);
+          }
         }
       } catch (e: any) {
         console.error(`[OKX] Failed wallet ${wallet.label}:`, e.message);
@@ -265,6 +318,15 @@ export async function fetchPositionsAggregate() {
       amount: asset.amount,
       usdValue: 0, // manual assets don't have auto price calc yet
     });
+  }
+
+  // Ensure base-token prices are always present for the frontend
+  const missingBasePrices = (['ETH', 'BTC', 'BNB'] as const).filter((t) => !prices[t]);
+  if (missingBasePrices.length > 0) {
+    const fallback = await fetchPrices(missingBasePrices);
+    for (const t of missingBasePrices) {
+      if (fallback[t]) prices[t] = fallback[t];
+    }
   }
 
   // 7. Build TokenPosition array

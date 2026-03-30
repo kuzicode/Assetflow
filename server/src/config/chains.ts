@@ -11,6 +11,11 @@ export const EVM_RPCS: Record<string, string> = {
   avalanche: 'https://api.avax.network/ext/bc/C/rpc',
 };
 
+// Fallback RPC endpoints from environment variables
+const EVM_RPC_FALLBACKS: Record<string, string | undefined> = {
+  ethereum: process.env.ETH_RPC_FALLBACK,
+};
+
 // Chain IDs for static network (avoids auto-detect retries)
 const CHAIN_IDS: Record<string, number> = {
   ethereum: 1,
@@ -23,15 +28,26 @@ const CHAIN_IDS: Record<string, number> = {
 };
 
 /**
- * Create a JsonRpcProvider with a static network to avoid auto-detect retries.
+ * Create a provider for the given chain.
+ * If a fallback RPC is configured, returns a FallbackProvider (primary → fallback).
  */
-export function createProvider(chain: string): ethers.JsonRpcProvider | null {
+export function createProvider(chain: string): ethers.JsonRpcProvider | ethers.FallbackProvider | null {
   const rpc = EVM_RPCS[chain];
   if (!rpc) return null;
   const chainId = CHAIN_IDS[chain];
-  if (!chainId) return new ethers.JsonRpcProvider(rpc);
-  const network = new ethers.Network(chain, chainId);
-  return new ethers.JsonRpcProvider(rpc, network, { staticNetwork: network });
+  const network = chainId ? new ethers.Network(chain, chainId) : undefined;
+  const opts = network ? { staticNetwork: network } : {};
+
+  const primary = new ethers.JsonRpcProvider(rpc, network, opts);
+
+  const fallbackUrl = EVM_RPC_FALLBACKS[chain];
+  if (!fallbackUrl) return primary;
+
+  const fallback = new ethers.JsonRpcProvider(fallbackUrl, network, opts);
+  return new ethers.FallbackProvider([
+    { provider: primary, priority: 1, stallTimeout: 2000 },
+    { provider: fallback, priority: 2, stallTimeout: 2000 },
+  ], network);
 }
 
 // Native token symbol per chain

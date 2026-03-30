@@ -228,7 +228,11 @@ export default function Dashboard() {
   const bnbDisplayUsd = (bnbPos?.totalUsdValue || 0) + manualBnbUsd;
 
   const r = revenueOverview;
-  const runningTime = r ? `${r.periodLabel}:${fmtMMDD(r.startDate)}-${fmtMMDD(new Date().toISOString())}` : '未设置';
+  const latestSettledWeek = weeklyPnl.find((w) => w.status !== 'in_progress');
+  const hasInProgress = weeklyPnl.some((w) => w.status === 'in_progress');
+  const runningEndDate = latestSettledWeek ? latestSettledWeek.endDate : new Date().toISOString();
+  const runningTime = r ? `${r.periodLabel}:${fmtMMDD(r.startDate)}-${fmtMMDD(runningEndDate)}` : '未设置';
+  const runningTimePending = r && hasInProgress;
   // 始终用实时仓位总额，确保与资金数据页对齐
   const liveCashValue = positionsTotalUsd;
   const unrealizedPnl = r ? liveCashValue - r.fairValue : 0;
@@ -305,6 +309,9 @@ export default function Dashboard() {
                   <span className="material-symbols-outlined text-sm mr-1">history</span>
                   运行时间:
                   <span className="font-mono-data ml-2">{runningTime}</span>
+                  {runningTimePending && (
+                    <span className="ml-2 text-xs text-yellow-600 font-medium">待结算更新</span>
+                  )}
                 </p>
               </div>
               <div className="text-right flex flex-col items-end justify-start pt-10 md:pt-9 min-w-[120px]">
@@ -444,7 +451,7 @@ export default function Dashboard() {
                     {r ? `${unrealizedPnl >= 0 ? '+' : ''}${unrealizedPnl.toLocaleString()}` : '0'}
                   </p>
                   <p className="text-[10px] text-outline/50 mt-0.5 italic leading-tight max-w-[200px]">
-                    公允价值不含无偿损失，现金价值含
+                    公允价值不含无常损失，现金价值含无常损失及已实现损益
                   </p>
                 </div>
               </div>
