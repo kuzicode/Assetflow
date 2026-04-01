@@ -2,6 +2,9 @@
 design/*
 !design/DESIGN.md
 
+# docs/: local plan, not tracked
+docs/
+
 # Runtime
 assetflow.pid
 

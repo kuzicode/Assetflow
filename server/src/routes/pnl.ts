@@ -434,7 +434,10 @@ router.put('/:id', (req, res) => {
       status = ?,
       auto_accumulate = ?,
       editable = ?,
-      is_adjusted = 1
+      is_adjusted = 1,
+      last_uniswap_value = COALESCE(?, last_uniswap_value),
+      last_morpho_value = COALESCE(?, last_morpho_value),
+      last_hlp_value = COALESCE(?, last_hlp_value)
     WHERE id = ?
   `).run(
     req.body.startDate ?? null,
@@ -448,6 +451,9 @@ router.put('/:id', (req, res) => {
     nextStatus,
     nextAutoAccumulate,
     nextEditable,
+    req.body.lastUniswapValue ?? null,
+    req.body.lastMorphoValue ?? null,
+    req.body.lastHlpValue ?? null,
     req.params.id
   );
 
@@ -480,6 +486,9 @@ function formatPnlRecord(r: any) {
     incomeTotal: r.income_total || 0,
     lastAutoUpdateAt: r.last_auto_update_at || null,
     basePnl: r.base_pnl != null ? Number(r.base_pnl) : 0,
+    lastUniswapValue: r.last_uniswap_value || 0,
+    lastMorphoValue: r.last_morpho_value || 0,
+    lastHlpValue: r.last_hlp_value || 0,
   };
 }
 

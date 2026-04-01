@@ -111,6 +111,10 @@ In `WalletManagement.tsx`, `getAddressUrl(address, chains)` maps addresses to bl
 - `0x...` (42 chars) → debank.com/profile
 - Other formats → non-clickable
 
+## Daily Auto-Snapshot
+
+`runAutoSnapshot()` in `server/src/routes/snapshots.ts` runs daily at UTC+8 08:00 (+ startup catch-up). It calls `fetchPositionsAggregate()`, computes total USD value, and inserts into `snapshots` table (type=`auto`). Idempotent per UTC+8 date. Two consecutive snapshots' `total_fair_value` difference = daily return.
+
 ## Settings (UI-only, not yet wired)
 
 `settlement_day` and `auto_snapshot` are stored in the `settings` table and displayed in Settings page but **not used by any backend logic**. Auto-settlement is manual for now.
