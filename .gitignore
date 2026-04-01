@@ -1,5 +1,5 @@
-# plan/: design & docs, local only
-plan/
+# docs/: design & docs, local only
+docs/
 
 # Runtime
 assetflow.pid
