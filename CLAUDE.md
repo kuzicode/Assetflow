@@ -121,4 +121,4 @@ In `WalletManagement.tsx`, `getAddressUrl(address, chains)` maps addresses to bl
 
 ## Design Document
 
-The primary architecture reference is `design/DESIGN.md` — read it for data model details, P&L calculation logic, and protocol integration specifics.
+The primary architecture reference is `plan/DESIGN.md` — read it for data model details, P&L calculation logic, and protocol integration specifics.

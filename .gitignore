@@ -1,9 +1,5 @@
-# design/: only track DESIGN.md; ignore other local drafts
-design/*
-!design/DESIGN.md
-
-# docs/: local plan, not tracked
-docs/
+# plan/: design & docs, local only
+plan/
 
 # Runtime
 assetflow.pid
