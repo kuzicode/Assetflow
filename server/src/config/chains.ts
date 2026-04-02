@@ -1,17 +1,17 @@
 import { ethers } from 'ethers';
 
-// EVM RPC endpoints (public)
+// EVM RPC endpoints — env vars take priority, public nodes as last resort
 export const EVM_RPCS: Record<string, string> = {
-  ethereum: 'https://eth.llamarpc.com',
+  ethereum: process.env.ETH_RPC_URL ?? 'https://eth.llamarpc.com',
   bsc: 'https://bsc-dataseed.binance.org',
   polygon: 'https://polygon.llamarpc.com',
   arbitrum: 'https://arb1.arbitrum.io/rpc',
   optimism: 'https://mainnet.optimism.io',
-  base: 'https://base.llamarpc.com',
+  base: process.env.BASE_RPC_URL ?? 'https://base.llamarpc.com',
   avalanche: 'https://api.avax.network/ext/bc/C/rpc',
 };
 
-// Fallback RPC endpoints from environment variables
+// Fallback RPC endpoints (secondary, used when primary stalls >2s)
 const EVM_RPC_FALLBACKS: Record<string, string | undefined> = {
   ethereum: process.env.ETH_RPC_FALLBACK,
 };

@@ -1,9 +1,17 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import path from 'path';
+
+// Load .env from project root regardless of CWD (make dev-server runs from server/)
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+
 import './db/index.js';
 import app from './app.js';
 import cron from 'node-cron';
 import { runDailyPnlAutoAccumulate } from './routes/pnl.js';
 import { runAutoSnapshot } from './routes/snapshots.js';
+import { prefetchYields } from './routes/yields.js';
 
 const PORT = process.env.PORT || 3001;
 
@@ -21,7 +29,7 @@ cron.schedule('0 0 * * *', async () => {
   }
 }, { timezone: 'UTC' });
 
-// Daily auto-snapshot: UTC+8 08:00 (= UTC 00:00)
+// Daily jobs: UTC+8 08:00 — snapshot + yields prefetch
 cron.schedule('0 8 * * *', async () => {
   try {
     const result = await runAutoSnapshot();
@@ -33,6 +41,12 @@ cron.schedule('0 8 * * *', async () => {
   } catch (error: any) {
     console.error('[Snapshot] auto-snapshot failed:', error.message);
   }
+  try {
+    await prefetchYields();
+    console.log('[Yields] daily prefetch completed');
+  } catch (error: any) {
+    console.error('[Yields] daily prefetch failed:', error.message);
+  }
 }, { timezone: 'Asia/Shanghai' });
 
 // Startup catch-up
@@ -41,4 +55,7 @@ runDailyPnlAutoAccumulate().catch((error: any) => {
 });
 runAutoSnapshot().catch((error: any) => {
   console.error('[Snapshot] startup snapshot failed:', error.message);
+});
+prefetchYields().catch((error: any) => {
+  console.error('[Yields] startup prefetch failed:', error.message);
 });

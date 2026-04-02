@@ -88,6 +88,14 @@ export interface Wallet {
   chains: string[];
 }
 
+// --- 理财利率 ---
+export interface YieldsData {
+  aave_usdc: { apy: number | null; chain: string };
+  morpho_usdc: { apy: number | null; chain: string; vault: string };
+  hlp: { apy: number | null };
+  updatedAt?: string;
+}
+
 // --- 设置 ---
 export interface AppSettings {
   settlement_day: string;

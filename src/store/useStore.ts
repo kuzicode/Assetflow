@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { TokenPosition, PnlRecord, RevenueOverview, ManualAsset, Wallet, AppSettings } from '../types';
+import type { TokenPosition, PnlRecord, RevenueOverview, ManualAsset, Wallet, AppSettings, YieldsData } from '../types';
 import { API_BASE } from '../config/chains';
 
 const POSITIONS_CACHE_KEY = 'assetflow_positions_cache';
@@ -18,6 +18,8 @@ interface AppState {
   wallets: Wallet[];
   settings: AppSettings | null;
   prices: Record<string, number>;
+  spotPrices: Record<string, number>;
+  yields: YieldsData | null;
   positionsUpdatedAt: string | null;
 
   // Auth
@@ -42,6 +44,8 @@ interface AppState {
   fetchManualAssets: () => Promise<void>;
   fetchWallets: () => Promise<void>;
   fetchSettings: () => Promise<void>;
+  fetchSpotPrices: () => Promise<void>;
+  fetchYields: (force?: boolean) => Promise<void>;
   setError: (error: string | null) => void;
 }
 
@@ -63,6 +67,8 @@ export const useStore = create<AppState>((set) => ({
   wallets: [],
   settings: null,
   prices: {},
+  spotPrices: {},
+  yields: null,
   positionsUpdatedAt: null,
   authMode: (localStorage.getItem('authMode') as 'admin' | 'guest' | null) ?? null,
   setAuthMode: (mode) => {
@@ -215,6 +221,24 @@ export const useStore = create<AppState>((set) => ({
     try {
       const data = await api('/api/settings');
       set({ settings: data });
+    } catch (e: any) {
+      set({ error: e.message });
+    }
+  },
+
+  fetchSpotPrices: async () => {
+    try {
+      const data = await api('/api/prices?symbols=BTC,ETH,SOL,BNB');
+      set({ spotPrices: data });
+    } catch (e: any) {
+      set({ error: e.message });
+    }
+  },
+
+  fetchYields: async (force = false) => {
+    try {
+      const data = await api(`/api/yields${force ? '?force=1' : ''}`);
+      set({ yields: data });
     } catch (e: any) {
       set({ error: e.message });
     }

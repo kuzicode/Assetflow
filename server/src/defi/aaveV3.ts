@@ -1,5 +1,16 @@
 import { ethers } from 'ethers';
 import { AAVE_UI_POOL_DATA_PROVIDERS, AAVE_POOL_ADDRESSES_PROVIDERS } from '../config/defi.js';
+import { createProvider } from '../config/chains.js';
+
+// AAVE V3 Pool contract — getReserveData(asset) for direct per-asset APY lookup
+const POOL_ABI = [
+  'function getReserveData(address asset) external view returns (tuple(uint256 configuration, uint128 liquidityIndex, uint128 currentLiquidityRate, uint128 variableBorrowIndex, uint128 currentVariableBorrowRate, uint128 currentStableBorrowRate, uint40 lastUpdateTimestamp, uint16 id, address aTokenAddress, address stableDebtTokenAddress, address variableDebtTokenAddress, address interestRateStrategyAddress, uint128 accruedToTreasury, uint128 unbacked, uint128 isolationModeTotalDebt))',
+];
+
+// AAVE V3 Pool on Ethereum mainnet
+const AAVE_POOL_ETHEREUM = '0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2';
+// USDC on Ethereum mainnet (from https://app.aave.com/reserve-overview/?underlyingAsset=0xa0b86991...)
+const USDC_ETHEREUM = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
 
 const UI_POOL_ABI = [
   'function getUserReservesData(address provider, address user) view returns (tuple(address underlyingAsset, uint256 scaledATokenBalance, bool usageAsCollateralEnabledOnUser, uint256 currentStableDebt, uint256 currentVariableDebt, uint256 principalStableDebt, uint256 scaledVariableDebt, uint256 stableBorrowRate, uint256 variableBorrowRate, uint40 stableRateLastUpdated, bool usageAsCollateralEnabled)[] userReserves, tuple(uint256 totalCollateralBase, uint256 totalDebtBase, uint256 availableBorrowsBase, uint256 currentLiquidationThreshold, uint256 ltv, uint256 healthFactor) userEmodeCategoryId)',
@@ -21,6 +32,29 @@ export interface AavePosition {
 }
 
 const RAY = 10n ** 27n;
+const SECONDS_PER_YEAR = 31536000;
+
+/**
+ * Fetch AAVE V3 USDC supply APY on Ethereum mainnet.
+ * Uses Pool.getReserveData(usdcAddress) directly — same approach as reference monitor.
+ * Returns APY as a percentage (e.g. 3.52 means 3.52%).
+ */
+export async function fetchAaveUsdcSupplyApy(): Promise<number | null> {
+  const provider = createProvider('ethereum');
+  if (!provider) return null;
+
+  try {
+    const pool = new ethers.Contract(AAVE_POOL_ETHEREUM, POOL_ABI, provider);
+    const reserveData = await pool.getReserveData(USDC_ETHEREUM);
+    // currentLiquidityRate is in RAY (1e27); APY = (1 + rate/RAY/SECONDS_PER_YEAR)^SECONDS_PER_YEAR - 1
+    const ratePerSecond = Number(reserveData.currentLiquidityRate) / 1e27;
+    const apy = (Math.pow(1 + ratePerSecond / SECONDS_PER_YEAR, SECONDS_PER_YEAR) - 1) * 100;
+    return apy;
+  } catch (e: any) {
+    console.error('[Aave V3] APY fetch failed:', e.message);
+    return null;
+  }
+}
 
 /**
  * Fetch Aave V3 supply and borrow positions for an address.

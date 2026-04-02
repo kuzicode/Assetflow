@@ -1,5 +1,20 @@
+import { useEffect } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useStore } from '../store/useStore';
+
+const COIN_COLORS: Record<string, string> = {
+  BTC: '#F7931A',
+  ETH: '#627EEA',
+  SOL: '#9945FF',
+  BNB: '#F3BA2F',
+};
+
+const COIN_LABELS: Record<string, string> = {
+  BTC: '₿',
+  ETH: 'Ξ',
+  SOL: '◎',
+  BNB: 'B',
+};
 
 const navItems = [
   { to: '/',          label: '收益总览',     icon: 'dashboard' },
@@ -11,7 +26,11 @@ const navItems = [
 
 export default function Layout() {
   const navigate = useNavigate();
-  const { revenueOverview, authMode, setAuthMode } = useStore();
+  const { revenueOverview, authMode, setAuthMode, spotPrices, fetchSpotPrices } = useStore();
+
+  useEffect(() => {
+    fetchSpotPrices();
+  }, []);
 
   const handleLogout = () => {
     setAuthMode(null);
@@ -29,7 +48,7 @@ export default function Layout() {
       {/* Sidebar */}
       <aside className="h-screen w-56 fixed left-0 top-0 bg-surface-container-low flex flex-col py-8 z-50">
         <div className="px-6 mb-10">
-          <h1 className="text-xl font-bold text-primary font-headline tracking-tight">Assetflow</h1>
+          <h1 className="text-xl font-bold text-primary font-headline tracking-tight">Trusme Lab</h1>
           <p className="text-xs text-on-surface-variant/60 font-medium mt-1">加密资产管理系统</p>
         </div>
 
@@ -84,8 +103,27 @@ export default function Layout() {
 
       {/* Top Nav */}
       <header className="fixed top-0 right-0 w-[calc(100%-14rem)] z-40 bg-surface/80 backdrop-blur-xl flex justify-between items-center px-12 py-4 shadow-[0px_12px_32px_rgba(25,28,29,0.04)]">
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-on-surface-variant font-medium">by Trusme AI Lab</span>
+        <div className="flex items-center gap-4">
+          <span className="text-xs font-bold text-outline uppercase tracking-widest">币价行情：</span>
+          {(['BTC', 'ETH', 'SOL', 'BNB'] as const).map((sym, i) => (
+            <div key={sym} className="flex items-center gap-3">
+              {i > 0 && <span className="text-outline-variant/40 text-xs select-none">|</span>}
+              <div className="flex items-center gap-1.5">
+                <span
+                  className="w-[18px] h-[18px] rounded-full flex items-center justify-center text-white font-bold leading-none shrink-0"
+                  style={{ backgroundColor: COIN_COLORS[sym], fontSize: '9px' }}
+                >
+                  {COIN_LABELS[sym]}
+                </span>
+                <span className="text-xs font-bold text-on-surface">{sym}</span>
+                <span className="text-xs font-mono-data text-on-surface-variant">
+                  {spotPrices[sym]
+                    ? `$${spotPrices[sym].toLocaleString(undefined, { maximumFractionDigits: sym === 'BTC' ? 0 : 2 })}`
+                    : '—'}
+                </span>
+              </div>
+            </div>
+          ))}
         </div>
         <div className="flex items-center gap-6">
           {revenueOverview && (

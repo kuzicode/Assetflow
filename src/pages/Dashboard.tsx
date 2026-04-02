@@ -43,7 +43,7 @@ const pnlTdStatus = 'px-3 md:px-4 py-4 text-right text-xs font-bold whitespace-n
 const pnlTdAction = 'px-2 md:px-3 py-4 text-right whitespace-nowrap';
 
 export default function Dashboard() {
-  const { revenueOverview, weeklyPnl, monthlyPnl, positions, manualAssets, prices, authMode, fetchRevenueOverview, fetchWeeklyPnl, fetchMonthlyPnl, loadPositions, fetchManualAssets, updateRevenueOverview, createWeeklyPnl, createMonthlyPnl, updatePnlRecord, deletePnlRecord } = useStore();
+  const { revenueOverview, weeklyPnl, monthlyPnl, positions, manualAssets, prices, yields, authMode, fetchRevenueOverview, fetchWeeklyPnl, fetchMonthlyPnl, loadPositions, fetchManualAssets, fetchYields, updateRevenueOverview, createWeeklyPnl, createMonthlyPnl, updatePnlRecord, deletePnlRecord } = useStore();
   const isAdmin = authMode === 'admin';
 
   const [isEditing, setIsEditing] = useState(false);
@@ -60,6 +60,7 @@ export default function Dashboard() {
   const [editForm, setEditForm] = useState({ startDate: '', endDate: '', startingCapital: '', pnl: '', days: '' });
   const [monthlyPage, setMonthlyPage] = useState(1);
   const [weeklyPage, setWeeklyPage] = useState(1);
+  const [refreshingYields, setRefreshingYields] = useState(false);
 
   useEffect(() => {
     fetchRevenueOverview();
@@ -67,6 +68,7 @@ export default function Dashboard() {
     fetchMonthlyPnl();
     loadPositions();
     fetchManualAssets();
+    fetchYields();
   }, []);
 
   const PAGE_SIZE = 4;
@@ -233,9 +235,6 @@ export default function Dashboard() {
   const runningEndDate = latestSettledWeek ? latestSettledWeek.endDate : new Date().toISOString();
   const runningTime = r ? `${r.periodLabel}:${fmtMMDD(r.startDate)}-${fmtMMDD(runningEndDate)}` : '未设置';
   const runningTimePending = r && hasInProgress;
-  // 始终用实时仓位总额，确保与资金数据页对齐
-  const liveCashValue = positionsTotalUsd;
-  const unrealizedPnl = r ? liveCashValue - r.fairValue : 0;
   const isInProgress = (rec: any) => rec.status === 'in_progress';
   const rowClass = (rec: any) => isInProgress(rec) ? 'text-yellow-600' : '';
   const isLatestMonthly = (rec: any) => monthlyPnl.length > 0 && monthlyPnl[0].id === rec.id;
@@ -283,10 +282,10 @@ export default function Dashboard() {
       {/* Hero Section: Revenue Overview */}
       <section className="relative">
         <div className="absolute -top-12 -right-12 w-64 h-64 bg-primary-fixed/20 blur-3xl rounded-full -z-10" />
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-6">
 
           {/* Main KPI Card */}
-          <div className="lg:col-span-3 bg-surface-container-lowest rounded-[2rem] p-8 relative overflow-hidden">
+          <div className="sm:col-span-2 lg:col-span-6 bg-surface-container-lowest rounded-[2rem] p-8 relative overflow-hidden">
             {isAdmin && !isEditing && (
               <button
                 onClick={handleEditOpen}
@@ -296,7 +295,7 @@ export default function Dashboard() {
                 <span className="material-symbols-outlined text-xl">edit</span>
               </button>
             )}
-            <div className="flex justify-between items-start mb-10">
+            <div className="flex justify-between items-start mb-6">
               <div>
                 <span className="px-3 py-1 bg-primary-fixed text-on-primary-fixed rounded-full text-xs font-bold tracking-wider mb-4 inline-block">
                   收益概览 &bull; PRIMARY REVENUE
@@ -401,7 +400,7 @@ export default function Dashboard() {
             )}
 
             {/* Metrics grid */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
                 <p className="text-xs font-medium text-on-surface-variant/70 uppercase">起始投资额</p>
                 <p className="text-xl font-headline font-bold text-on-surface">
@@ -428,38 +427,10 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Cash value & unrealized PnL */}
-            <div className="mt-8 pt-8 border-t border-surface-container-high grid grid-cols-2 gap-8">
-              <div className="flex items-center space-x-4">
-                <div className="w-10 h-10 rounded-xl bg-secondary-container flex items-center justify-center">
-                  <span className="material-symbols-outlined text-secondary">payments</span>
-                </div>
-                <div>
-                  <p className="text-xs font-medium text-outline uppercase">账面现金价值</p>
-                  <p className="text-lg font-mono-data font-bold text-on-surface-variant">
-                    {liveCashValue > 0 ? liveCashValue.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '0'}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center space-x-4">
-                <div className="w-10 h-10 rounded-xl bg-surface-container flex items-center justify-center">
-                  <span className="material-symbols-outlined text-on-surface-variant">swap_vert</span>
-                </div>
-                <div>
-                  <p className="text-xs font-medium text-outline uppercase">账面变动损益</p>
-                  <p className="text-lg font-mono-data font-bold text-on-surface-variant">
-                    {r ? `${unrealizedPnl >= 0 ? '+' : ''}${unrealizedPnl.toLocaleString()}` : '0'}
-                  </p>
-                  <p className="text-[10px] text-outline/50 mt-0.5 italic leading-tight max-w-[200px]">
-                    公允价值不含无常损失，现金价值含无常损失及已实现损益
-                  </p>
-                </div>
-              </div>
-            </div>
           </div>
 
           {/* Asset Distribution (text) */}
-          <div className="bg-surface-container-lowest rounded-[2rem] p-8">
+          <div className="lg:col-span-3 bg-surface-container-lowest rounded-[2rem] p-6">
             <h4 className="text-sm font-bold text-outline mb-6 uppercase tracking-widest">资产分配</h4>
 
             <div className="space-y-6">
@@ -472,15 +443,15 @@ export default function Dashboard() {
                 </div>
                 <div className="mt-3 space-y-2 text-sm text-on-surface-variant">
                   <div className="flex justify-between">
-                    <span>- Uniswap ETH LP</span>
+                    <span>- Uniswap LP</span>
                     <span className="font-mono-data">{pct(stableUniswapLpUsd).toFixed(2)}%</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>- HLP</span>
+                    <span>- HLP 金库</span>
                     <span className="font-mono-data">{pct(stableHlpUsd).toFixed(2)}%</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>- Morpho借贷</span>
+                    <span>- Morpho 借贷池</span>
                     <span className="font-mono-data">{pct(stableMorphoUsd).toFixed(2)}%</span>
                   </div>
                   <div className="flex justify-between">
@@ -512,6 +483,52 @@ export default function Dashboard() {
                     </span>
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Yield Rate Overview Card */}
+          <div className="sm:col-span-2 lg:col-span-3 bg-surface-container-lowest rounded-[2rem] p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h4 className="text-sm font-bold text-outline uppercase tracking-widest">利率参考</h4>
+              <button
+                onClick={async () => {
+                  setRefreshingYields(true);
+                  try { await fetchYields(true); } finally { setRefreshingYields(false); }
+                }}
+                disabled={refreshingYields}
+                className="p-1 rounded-lg text-outline hover:text-primary hover:bg-primary-fixed/20 transition-colors disabled:opacity-40"
+                title="立即刷新"
+              >
+                <span className={`material-symbols-outlined text-base ${refreshingYields ? 'animate-spin' : ''}`}>refresh</span>
+              </button>
+            </div>
+            <div className="space-y-5">
+              <div>
+                <p className="text-xs text-on-surface-variant mb-1">AAVE-USDC</p>
+                <p className="text-xl font-headline font-bold text-primary">
+                  {yields?.aave_usdc?.apy != null
+                    ? `${yields.aave_usdc.apy.toFixed(2)}%`
+                    : <span className="text-outline text-sm font-normal">{yields ? '—' : '加载中…'}</span>}
+                </p>
+              </div>
+              <div className="pt-3 border-t border-surface-container">
+                <p className="text-xs text-on-surface-variant mb-1">Morpho-USDC</p>
+                <p className="text-xl font-headline font-bold text-primary">
+                  {yields?.morpho_usdc?.apy != null
+                    ? `${yields.morpho_usdc.apy.toFixed(2)}%`
+                    : <span className="text-outline text-sm font-normal">{yields ? '—' : '加载中…'}</span>}
+                </p>
+                <p className="text-[10px] text-outline mt-0.5">Steakhouse USDC · Base</p>
+              </div>
+              <div className="pt-3 border-t border-surface-container">
+                <p className="text-xs text-on-surface-variant mb-1">HLP</p>
+                <p className="text-xl font-headline font-bold text-primary">
+                  {yields?.hlp?.apy != null
+                    ? `${yields.hlp.apy.toFixed(2)}%`
+                    : <span className="text-outline text-sm font-normal">{yields ? '—' : '加载中…'}</span>}
+                </p>
+                <p className="text-[10px] text-outline mt-0.5">Hyperliquid HLP</p>
               </div>
             </div>
           </div>
