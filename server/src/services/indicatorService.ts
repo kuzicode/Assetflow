@@ -287,3 +287,307 @@ export async function getMaTrends(interval: string, symbols = DEFAULT_TREND_SYMB
 }
 
 export { classifyTrend, buildMaSeries };
+
+// ────────────────────────────────────────────────────────────
+// MVRV
+// ────────────────────────────────────────────────────────────
+
+
+export interface MvrvHistoryItem {
+  date: string;
+  mvrv: number;
+  price: number;
+}
+
+export interface MvrvResult {
+  current: {
+    mvrv: number;
+    price: number;
+    status: string;
+    percentile: number;
+  };
+  history: MvrvHistoryItem[];
+  timestamp: string;
+}
+
+// In-memory cache that also holds stale data for fallback
+let mvrvCache: { value: MvrvResult | null; expiresAt: number } = { value: null, expiresAt: 0 };
+
+const BITCOIN_DATA_BASE = 'https://bitcoin-data.com/v1';
+
+interface BitcoinDataPoint {
+  t: string; // "YYYY-MM-DD"
+  v: number;
+}
+
+function getMvrvStatus(mvrv: number): string {
+  if (mvrv < 1.0) return '低估区';
+  if (mvrv <= 3.0) return '合理区';
+  return '高估区';
+}
+
+function computePercentile(values: number[], current: number): number {
+  const below = values.filter((v) => v <= current).length;
+  return Math.round((below / values.length) * 100);
+}
+
+async function fetchBitcoinData<T>(path: string): Promise<T> {
+  const resp = await fetch(`${BITCOIN_DATA_BASE}/${path}`, {
+    headers: { 'Accept': 'application/json' },
+  });
+  if (!resp.ok) throw new Error(`bitcoin-data.com/${path} HTTP ${resp.status}`);
+  return resp.json() as Promise<T>;
+}
+
+export async function getMvrv(): Promise<MvrvResult> {
+  // Return fresh cache
+  if (mvrvCache.value && mvrvCache.expiresAt > Date.now()) return mvrvCache.value;
+
+  try {
+    const [mvrvRaw, priceRaw] = await Promise.all([
+      fetchBitcoinData<BitcoinDataPoint[]>('mvrv'),
+      fetchBitcoinData<BitcoinDataPoint[]>('btc-price'),
+    ]);
+
+    const priceMap = new Map<string, number>();
+    for (const item of priceRaw) priceMap.set(item.t, item.v);
+
+    const history: MvrvHistoryItem[] = mvrvRaw
+      .filter((item) => priceMap.has(item.t))
+      .map((item) => ({ date: item.t, mvrv: item.v, price: priceMap.get(item.t)! }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    if (history.length === 0) throw new Error('MVRV history is empty after merge');
+
+    const latest = history[history.length - 1];
+    const percentile = computePercentile(history.map((h) => h.mvrv), latest.mvrv);
+
+    const result: MvrvResult = {
+      current: {
+        mvrv: round(latest.mvrv, 3),
+        price: round(latest.price, 0),
+        status: getMvrvStatus(latest.mvrv),
+        percentile,
+      },
+      history,
+      timestamp: getNowIso(),
+    };
+
+    // 24h cache — 8 req/hour limit on free tier, production only calls once/day
+    mvrvCache = { value: result, expiresAt: Date.now() + 24 * 60 * 60 * 1000 };
+    return result;
+  } catch (err) {
+    // On rate-limit or network error: return stale cache if available
+    if (mvrvCache.value) {
+      console.warn('[MVRV] fetch failed, serving stale cache:', err instanceof Error ? err.message : err);
+      return mvrvCache.value;
+    }
+    throw err;
+  }
+}
+
+// ────────────────────────────────────────────────────────────
+// AHR999
+// ────────────────────────────────────────────────────────────
+
+export interface Ahr999HistoryItem {
+  date: string;
+  ahr999: number;
+  price: number;
+  cost200d: number;
+  fittedPrice: number;
+}
+
+export interface Ahr999Result {
+  current: {
+    ahr999: number;
+    price: number;
+    cost200d: number;
+    fittedPrice: number;
+    suggestion: string;
+  };
+  history: Ahr999HistoryItem[];
+  timestamp: string;
+}
+
+let ahr999Cache: IndicatorCache<Ahr999Result> = { value: null, expiresAt: 0 };
+
+const GENESIS_TIME = new Date('2009-01-03').getTime();
+
+function getAhr999Suggestion(ahr999: number): string {
+  if (ahr999 < 0.45) return '抄底区';
+  if (ahr999 <= 1.2) return '定投区';
+  return '观望区';
+}
+
+export async function getAhr999(): Promise<Ahr999Result> {
+  if (ahr999Cache.value && ahr999Cache.expiresAt > Date.now()) return ahr999Cache.value;
+
+  try {
+    const klines = await fetchBinanceKlines('BTC', '1d', 1825);
+    if (klines.length === 0) throw new Error('无法获取 BTC K 线数据');
+
+    const closes = klines.map((k) => k.close);
+    const ma200 = rollingMean(closes, 200);
+
+    const history: Ahr999HistoryItem[] = [];
+
+    for (let i = 0; i < klines.length; i += 1) {
+      if (!Number.isFinite(ma200[i])) continue;
+
+      const kline = klines[i];
+      const price = kline.close;
+      const cost200d = ma200[i];
+      const daysSinceGenesis = (kline.openTime - GENESIS_TIME) / 86_400_000;
+      const fittedPrice = Math.pow(10, 5.84 * Math.log10(daysSinceGenesis) - 17.3);
+      const ahr999 = (price / cost200d) * (price / fittedPrice);
+
+      history.push({
+        date: new Date(kline.openTime).toISOString().slice(0, 10),
+        ahr999: round(ahr999, 4),
+        price: round(price, 2),
+        cost200d: round(cost200d, 2),
+        fittedPrice: round(fittedPrice, 2),
+      });
+    }
+
+    if (history.length === 0) throw new Error('AHR999 history is empty after computation');
+
+    const latest = history[history.length - 1];
+
+    const result: Ahr999Result = {
+      current: {
+        ahr999: latest.ahr999,
+        price: latest.price,
+        cost200d: latest.cost200d,
+        fittedPrice: latest.fittedPrice,
+        suggestion: getAhr999Suggestion(latest.ahr999),
+      },
+      history,
+      timestamp: getNowIso(),
+    };
+
+    ahr999Cache = { value: result, expiresAt: Date.now() + 24 * 60 * 60 * 1000 };
+    return result;
+  } catch (err) {
+    if (ahr999Cache.value) {
+      console.warn('[AHR999] fetch failed, serving stale cache:', err instanceof Error ? err.message : err);
+      return ahr999Cache.value;
+    }
+    throw err;
+  }
+}
+
+// ────────────────────────────────────────────────────────────
+// BTCDOM
+// ────────────────────────────────────────────────────────────
+
+export interface BtcdomHistoryItem {
+  date: string;
+  dominance: number;
+}
+
+export interface BtcdomResult {
+  current: {
+    dominance: number;
+    price: number;
+    status: string;
+  };
+  history: BtcdomHistoryItem[];
+  timestamp: string;
+}
+
+let btcdomCache: IndicatorCache<BtcdomResult> = { value: null, expiresAt: 0 };
+
+const COINGECKO_BASE = 'https://pro-api.coingecko.com/api/v3';
+
+function getBtcdomStatus(dominance: number): string {
+  if (dominance > 60) return 'BTC主导';
+  if (dominance >= 40) return '均衡';
+  return '山寨季';
+}
+
+async function fetchCoinGecko<T>(path: string): Promise<T> {
+  const apiKey = process.env.COINGECKO_API_KEY ?? '';
+  const resp = await fetch(`${COINGECKO_BASE}${path}`, {
+    headers: {
+      'Accept': 'application/json',
+      'x-cg-pro-api-key': apiKey,
+    },
+  });
+  if (!resp.ok) throw new Error(`CoinGecko ${path} HTTP ${resp.status}`);
+  return resp.json() as Promise<T>;
+}
+
+export async function getBtcdom(): Promise<BtcdomResult> {
+  if (btcdomCache.value && btcdomCache.expiresAt > Date.now()) return btcdomCache.value;
+
+  try {
+    const [globalData, btcChart, globalChart] = await Promise.all([
+      fetchCoinGecko<{ data: { market_cap_percentage: { btc: number } } }>('/global'),
+      fetchCoinGecko<{ market_caps: [number, number][]; prices: [number, number][] }>(
+        '/coins/bitcoin/market_chart?vs_currency=usd&days=1095&interval=daily',
+      ),
+      fetchCoinGecko<{ market_cap: [number, number][] }>(
+        '/global/market_cap_chart?days=1095&vs_currency=usd',
+      ),
+    ]);
+
+    // Build BTC mcap and price by date
+    const btcMcapByDate = new Map<string, number>();
+    const btcPriceByDate = new Map<string, number>();
+
+    for (const [ts, mcap] of btcChart.market_caps) {
+      const date = new Date(ts).toISOString().slice(0, 10);
+      btcMcapByDate.set(date, mcap);
+    }
+    for (const [ts, price] of btcChart.prices) {
+      const date = new Date(ts).toISOString().slice(0, 10);
+      btcPriceByDate.set(date, price);
+    }
+
+    // Build total mcap by date
+    const totalMcapByDate = new Map<string, number>();
+    for (const [ts, totalMcap] of globalChart.market_cap) {
+      const date = new Date(ts).toISOString().slice(0, 10);
+      totalMcapByDate.set(date, totalMcap);
+    }
+
+    // Align by date
+    const history: BtcdomHistoryItem[] = [];
+    for (const [date, btcMcap] of btcMcapByDate) {
+      const totalMcap = totalMcapByDate.get(date);
+      if (totalMcap == null || totalMcap === 0) continue;
+      const dominance = round((btcMcap / totalMcap) * 100, 2);
+      history.push({ date, dominance });
+    }
+    history.sort((a, b) => a.date.localeCompare(b.date));
+
+    if (history.length === 0) throw new Error('BTCDOM history is empty after merge');
+
+    const currentDominance = round(globalData.data.market_cap_percentage.btc, 2);
+
+    // Get current price from last btcChart prices entry
+    const lastPriceEntry = btcChart.prices[btcChart.prices.length - 1];
+    const currentPrice = lastPriceEntry ? round(lastPriceEntry[1], 0) : 0;
+
+    const result: BtcdomResult = {
+      current: {
+        dominance: currentDominance,
+        price: currentPrice,
+        status: getBtcdomStatus(currentDominance),
+      },
+      history,
+      timestamp: getNowIso(),
+    };
+
+    btcdomCache = { value: result, expiresAt: Date.now() + 24 * 60 * 60 * 1000 };
+    return result;
+  } catch (err) {
+    if (btcdomCache.value) {
+      console.warn('[BTCDOM] fetch failed, serving stale cache:', err instanceof Error ? err.message : err);
+      return btcdomCache.value;
+    }
+    throw err;
+  }
+}

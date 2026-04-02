@@ -123,19 +123,6 @@ export default function Login() {
           </div>
         </section>
 
-        {/* Decorative footer */}
-        <footer className="mt-32 opacity-30 flex items-center gap-6">
-          <div className="flex flex-col items-end">
-            <span className="text-[10px] font-headline uppercase tracking-tighter">Security Grade</span>
-            <span className="text-[10px] font-headline uppercase tracking-tighter">Local Only</span>
-          </div>
-          <div className="w-px h-8 bg-on-surface" />
-          <div className="flex flex-col items-start">
-            <span className="text-[10px] font-headline uppercase tracking-tighter text-primary">Assetflow</span>
-            <span className="text-[10px] font-headline uppercase tracking-tighter text-primary">Pristine Architecture</span>
-          </div>
-        </footer>
-
       </main>
     </div>
   );

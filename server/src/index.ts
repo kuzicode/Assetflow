@@ -12,6 +12,7 @@ import cron from 'node-cron';
 import { runDailyPnlAutoAccumulate } from './routes/pnl.js';
 import { runAutoSnapshot } from './routes/snapshots.js';
 import { prefetchYields } from './routes/yields.js';
+import { getMvrv, getAhr999, getBtcdom } from './services/indicatorService.js';
 
 const PORT = process.env.PORT || 3001;
 
@@ -47,6 +48,14 @@ cron.schedule('0 8 * * *', async () => {
   } catch (error: any) {
     console.error('[Yields] daily prefetch failed:', error.message);
   }
+  for (const [name, fn] of [['MVRV', getMvrv], ['AHR999', getAhr999], ['BTCDOM', getBtcdom]] as const) {
+    try {
+      await fn();
+      console.log(`[Indicators] ${name} daily prefetch completed`);
+    } catch (error: any) {
+      console.error(`[Indicators] ${name} daily prefetch failed:`, error.message);
+    }
+  }
 }, { timezone: 'Asia/Shanghai' });
 
 // Startup catch-up
@@ -59,3 +68,6 @@ runAutoSnapshot().catch((error: any) => {
 prefetchYields().catch((error: any) => {
   console.error('[Yields] startup prefetch failed:', error.message);
 });
+getMvrv().catch((error: any) => { console.error('[Indicators] MVRV startup prefetch failed:', error.message); });
+getAhr999().catch((error: any) => { console.error('[Indicators] AHR999 startup prefetch failed:', error.message); });
+getBtcdom().catch((error: any) => { console.error('[Indicators] BTCDOM startup prefetch failed:', error.message); });
