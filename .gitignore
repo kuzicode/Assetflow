@@ -1,6 +1,9 @@
 # docs/: design & docs, local only
 docs/
 
+# Local Claude Code instructions (contains server config, not for repo)
+CLAUDE.md
+
 # Runtime
 assetflow.pid
 
