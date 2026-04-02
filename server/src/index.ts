@@ -12,6 +12,7 @@ import cron from 'node-cron';
 import { runDailyPnlAutoAccumulate } from './routes/pnl.js';
 import { runAutoSnapshot } from './routes/snapshots.js';
 import { prefetchYields } from './routes/yields.js';
+import { getPositionsSnapshot } from './services/positionsService.js';
 import { getMvrv, getAhr999, getBtcdom } from './services/indicatorService.js';
 
 const PORT = process.env.PORT || 3001;
@@ -67,6 +68,11 @@ runAutoSnapshot().catch((error: any) => {
 });
 prefetchYields().catch((error: any) => {
   console.error('[Yields] startup prefetch failed:', error.message);
+});
+// Positions: warm cache on startup so first user visit is instant.
+// runAutoSnapshot skips when today's snapshot already exists, so we prefetch separately.
+getPositionsSnapshot().catch((error: any) => {
+  console.error('[Positions] startup prefetch failed:', error.message);
 });
 getMvrv().catch((error: any) => { console.error('[Indicators] MVRV startup prefetch failed:', error.message); });
 getAhr999().catch((error: any) => { console.error('[Indicators] AHR999 startup prefetch failed:', error.message); });

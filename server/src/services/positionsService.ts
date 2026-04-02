@@ -59,7 +59,19 @@ interface PositionsCache {
   expiresAt: number;
 }
 
-const POSITIONS_CACHE_TTL_MS = 5 * 60 * 1000;
+// Cache expires at the next 08:00 UTC+8 (= 00:00 UTC).
+// This ensures positions are fetched at most once per day: the 08:00 cron is
+// the authoritative daily refresh; any earlier visit on the same day reuses
+// the cached result rather than hitting the chain again.
+function getNextEightAmUTC8(): number {
+  const now = Date.now();
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0); // today's 00:00 UTC = today's 08:00 UTC+8
+  let next = d.getTime();
+  if (next <= now) next += 24 * 3600_000; // already passed → use tomorrow
+  return next;
+}
+
 const EXTERNAL_CONCURRENCY = Math.max(1, Number(process.env.EXTERNAL_FETCH_CONCURRENCY || '3'));
 
 function getWallets(): Wallet[] {
@@ -403,7 +415,7 @@ export async function getPositionsSnapshot(options?: { force?: boolean }) {
     .then((snapshot) => {
       cache = {
         value: snapshot,
-        expiresAt: Date.now() + POSITIONS_CACHE_TTL_MS,
+        expiresAt: getNextEightAmUTC8(),
       };
       return snapshot;
     })
