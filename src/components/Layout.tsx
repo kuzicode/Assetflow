@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useStore } from '../store/useStore';
+import { apiFetch } from '../lib/api';
+import type { NavSection } from '../types/nav';
 
 const COIN_COLORS: Record<string, string> = {
   BTC: '#F7931A',
@@ -16,24 +18,41 @@ const COIN_LABELS: Record<string, string> = {
   BNB: 'B',
 };
 
-const navItems = [
-  { to: '/',          label: '收益总览',     icon: 'dashboard' },
-  { to: '/positions', label: '资金数据',     icon: 'account_balance_wallet' },
-  { to: '/wallets',   label: '钱包管理',     icon: 'account_balance' },
-  { to: '/settings',  label: '结算设置',     icon: 'settings_suggest' },
-  { to: '/account',   label: '账户管理',     icon: 'manage_accounts' },
+const navSections: NavSection[] = [
+  {
+    label: '理财数据管理',
+    items: [
+      { to: '/', label: '收益总览', icon: 'dashboard' },
+      { to: '/positions', label: '仓位数据', icon: 'account_balance_wallet' },
+      { to: '/wallets', label: '钱包管理', icon: 'account_balance' },
+    ],
+  },
+  {
+    label: '指标数据分析',
+    items: [
+      { to: '/analysis/ma', label: '币价分析', icon: 'timeline' },
+    ],
+  },
 ];
 
 export default function Layout() {
   const navigate = useNavigate();
-  const { revenueOverview, authMode, setAuthMode, spotPrices, fetchSpotPrices } = useStore();
+  const { revenueOverview, authMode, initializeApp, setAuthState, spotPrices } = useStore();
 
   useEffect(() => {
-    fetchSpotPrices();
+    initializeApp();
   }, []);
 
-  const handleLogout = () => {
-    setAuthMode(null);
+  const handleLogout = async () => {
+    try {
+      if (authMode === 'admin') {
+        await apiFetch('/api/auth/logout', { method: 'POST' });
+      }
+    } catch {}
+    setAuthState({ mode: null, token: null });
+    localStorage.removeItem('assetflow_positions_cache');
+    localStorage.removeItem('authMode');
+    localStorage.removeItem('assetflow_admin_token');
     navigate('/login', { replace: true });
   };
 
@@ -46,40 +65,49 @@ export default function Layout() {
   return (
     <div className="min-h-screen bg-surface text-on-surface">
       {/* Sidebar */}
-      <aside className="h-screen w-56 fixed left-0 top-0 bg-surface-container-low flex flex-col py-8 z-50">
-        <div className="px-6 mb-10">
+      <aside className="fixed left-0 top-0 z-50 flex h-screen w-52 flex-col border-r border-outline-variant/30 bg-[linear-gradient(180deg,#f7fbf9_0%,#eef5f1_100%)] py-8">
+        <div className="mb-9 px-5">
           <h1 className="text-xl font-bold text-primary font-headline tracking-tight">Trusme Lab</h1>
-          <p className="text-xs text-on-surface-variant/60 font-medium mt-1">加密资产管理系统</p>
+          <p className="text-xs text-on-surface-variant/60 font-medium mt-1">Crypto 综合数据看板</p>
         </div>
 
-        <nav className="flex-1 space-y-1 px-2">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === '/'}
-              className={({ isActive }) =>
-                isActive
-                  ? 'bg-primary-fixed text-primary font-bold rounded-xl px-4 py-3 flex items-center gap-3 transition-all duration-200'
-                  : 'text-on-surface-variant px-4 py-3 hover:bg-surface-container transition-colors rounded-xl flex items-center gap-3'
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  <span
-                    className="material-symbols-outlined"
-                    style={isActive ? { fontVariationSettings: "'FILL' 1" } : undefined}
+        <nav className="flex-1 space-y-5 overflow-y-auto px-3">
+          {navSections.map((section) => (
+            <section key={section.label}>
+              <div className="px-2.5 pb-3">
+                <p className="text-[11px] font-black uppercase tracking-[0.24em] text-outline">{section.label}</p>
+              </div>
+              <div className="space-y-1">
+                {section.items.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    end={item.to === '/'}
+                    className={({ isActive }) =>
+                      isActive
+                        ? 'flex items-center gap-3 rounded-2xl bg-primary-fixed px-3.5 py-3 text-primary font-bold transition-all duration-200 shadow-[0px_10px_24px_rgba(133,248,196,0.22)]'
+                        : 'flex items-center gap-3 rounded-2xl px-3.5 py-3 text-on-surface-variant transition-colors hover:bg-surface-container'
+                    }
                   >
-                    {item.icon}
-                  </span>
-                  <span className="font-headline tracking-tight text-sm">{item.label}</span>
-                </>
-              )}
-            </NavLink>
+                    {({ isActive }) => (
+                      <>
+                        <span
+                          className="material-symbols-outlined"
+                          style={isActive ? { fontVariationSettings: "'FILL' 1" } : undefined}
+                        >
+                          {item.icon}
+                        </span>
+                        <span className="font-headline tracking-tight text-sm">{item.label}</span>
+                      </>
+                    )}
+                  </NavLink>
+                ))}
+              </div>
+            </section>
           ))}
         </nav>
 
-        <div className="px-4 mt-auto pt-6">
+        <div className="mt-auto px-3 pt-6">
           <div className="flex items-center justify-between p-3 rounded-2xl hover:bg-surface-container transition-colors">
             <div className="flex items-center gap-3">
               <div className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm shrink-0 ${isAdmin ? 'bg-primary-fixed text-primary' : 'bg-surface-container text-on-surface-variant'}`}>
@@ -102,7 +130,7 @@ export default function Layout() {
       </aside>
 
       {/* Top Nav */}
-      <header className="fixed top-0 right-0 w-[calc(100%-14rem)] z-40 bg-surface/80 backdrop-blur-xl flex justify-between items-center px-12 py-4 shadow-[0px_12px_32px_rgba(25,28,29,0.04)]">
+      <header className="fixed top-0 right-0 z-40 flex w-[calc(100%-13rem)] items-center justify-between bg-surface/80 px-12 py-4 backdrop-blur-xl shadow-[0px_12px_32px_rgba(25,28,29,0.04)]">
         <div className="flex items-center gap-4">
           <span className="text-xs font-bold text-outline uppercase tracking-widest">币价行情：</span>
           {(['BTC', 'ETH', 'SOL', 'BNB'] as const).map((sym, i) => (
@@ -142,7 +170,7 @@ export default function Layout() {
       </header>
 
       {/* Main Content */}
-      <main className="ml-56 pt-24 px-12 pb-12">
+      <main className="ml-52 px-12 pb-12 pt-24">
         <Outlet />
       </main>
     </div>

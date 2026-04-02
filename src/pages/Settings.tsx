@@ -1,21 +1,20 @@
 import { useEffect } from 'react';
 import { useStore } from '../store/useStore';
-import { API_BASE } from '../config/chains';
+import { apiFetch } from '../lib/api';
 
 
 const DAY_LABELS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
 export default function Settings() {
-  const { settings, fetchSettings } = useStore();
+  const { settings, fetchSettings, initializeApp } = useStore();
 
   useEffect(() => {
-    fetchSettings();
+    initializeApp();
   }, []);
 
   const updateSetting = async (key: string, value: string) => {
-    await fetch(`${API_BASE}/api/settings`, {
+    await apiFetch('/api/settings', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ [key]: value }),
     });
     fetchSettings();

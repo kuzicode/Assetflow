@@ -43,7 +43,7 @@ const pnlTdStatus = 'px-3 md:px-4 py-4 text-right text-xs font-bold whitespace-n
 const pnlTdAction = 'px-2 md:px-3 py-4 text-right whitespace-nowrap';
 
 export default function Dashboard() {
-  const { revenueOverview, weeklyPnl, monthlyPnl, positions, manualAssets, prices, yields, authMode, fetchRevenueOverview, fetchWeeklyPnl, fetchMonthlyPnl, loadPositions, fetchManualAssets, fetchYields, updateRevenueOverview, createWeeklyPnl, createMonthlyPnl, updatePnlRecord, deletePnlRecord } = useStore();
+  const { revenueOverview, weeklyPnl, monthlyPnl, positions, yields, authMode, initializeApp, fetchWeeklyPnl, fetchYields, updateRevenueOverview, createWeeklyPnl, createMonthlyPnl, updatePnlRecord, deletePnlRecord } = useStore();
   const isAdmin = authMode === 'admin';
 
   const [isEditing, setIsEditing] = useState(false);
@@ -63,12 +63,7 @@ export default function Dashboard() {
   const [refreshingYields, setRefreshingYields] = useState(false);
 
   useEffect(() => {
-    fetchRevenueOverview();
-    fetchWeeklyPnl();
-    fetchMonthlyPnl();
-    loadPositions();
-    fetchManualAssets();
-    fetchYields();
+    initializeApp();
   }, []);
 
   const PAGE_SIZE = 4;
@@ -80,12 +75,7 @@ export default function Dashboard() {
   const weeklyPageRows = weeklyPnl.slice((safeWeeklyPage - 1) * PAGE_SIZE, safeWeeklyPage * PAGE_SIZE);
 
   // Total from positions (for auto-fill hint)
-  const totalUsd = positions.reduce((s, p) => s + p.totalUsdValue, 0);
-  const manualUsd = manualAssets.reduce((s, a) => {
-    const price = a.baseToken === 'STABLE' ? 1 : (prices[a.baseToken] || 0);
-    return s + a.amount * price;
-  }, 0);
-  const positionsTotalUsd = totalUsd + manualUsd;
+  const positionsTotalUsd = positions.reduce((s, p) => s + p.totalUsdValue, 0);
 
   const handleEditOpen = () => {
     setFormData({
@@ -192,11 +182,7 @@ export default function Dashboard() {
   const ethPos = positions.find((p) => p.baseToken === 'ETH');
   const bnbPos = positions.find((p) => p.baseToken === 'BNB');
 
-  const manualStableUsd = manualAssets
-    .filter((a) => a.baseToken === 'STABLE')
-    .reduce((s, a) => s + a.amount * 1, 0);
-
-  const stableTotalUsd = (stablePos?.totalUsdValue || 0) + manualStableUsd;
+  const stableTotalUsd = stablePos?.totalUsdValue || 0;
   const stableSubs = stablePos?.subPositions || [];
 
   const stableUniswapLpUsd = stableSubs
@@ -215,19 +201,10 @@ export default function Dashboard() {
 
   const pct = (v: number) => (stableTotalUsd > 0 ? (v / stableTotalUsd) * 100 : 0);
 
-  const manualEthAmount = manualAssets
-    .filter((a) => a.baseToken === 'ETH')
-    .reduce((s, a) => s + Number(a.amount || 0), 0);
-  const manualBnbAmount = manualAssets
-    .filter((a) => a.baseToken === 'BNB')
-    .reduce((s, a) => s + Number(a.amount || 0), 0);
-  const manualEthUsd = manualEthAmount * (prices.ETH || 0);
-  const manualBnbUsd = manualBnbAmount * (prices.BNB || 0);
-
   const ethDisplayAmount = (ethPos?.totalAmount || 0);
-  const ethDisplayUsd = (ethPos?.totalUsdValue || 0) + manualEthUsd;
+  const ethDisplayUsd = ethPos?.totalUsdValue || 0;
   const bnbDisplayAmount = (bnbPos?.totalAmount || 0);
-  const bnbDisplayUsd = (bnbPos?.totalUsdValue || 0) + manualBnbUsd;
+  const bnbDisplayUsd = bnbPos?.totalUsdValue || 0;
 
   const r = revenueOverview;
   const latestSettledWeek = weeklyPnl.find((w) => w.status !== 'in_progress');

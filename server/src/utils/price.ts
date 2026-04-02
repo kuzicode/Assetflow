@@ -3,6 +3,13 @@ import { STABLECOIN_SYMBOLS } from '../config/chains.js';
 
 const binance = new ccxt.binance();
 
+export interface PriceSnapshot {
+  prices: Record<string, number>;
+  missingSymbols: string[];
+  partialFailureSources: string[];
+  timestamp: string;
+}
+
 // Symbol normalization for Binance ticker lookup
 const SYMBOL_MAP: Record<string, string> = {
   WETH: 'ETH',
@@ -21,9 +28,11 @@ const SYMBOL_MAP: Record<string, string> = {
  * Fetch USD prices for a list of symbols.
  * Returns a map: symbol -> price in USD.
  */
-export async function fetchPrices(symbols: string[]): Promise<Record<string, number>> {
+export async function fetchPrices(symbols: string[]): Promise<PriceSnapshot> {
   const prices: Record<string, number> = {};
   const toFetch: Set<string> = new Set();
+  const missingSymbols = new Set<string>();
+  const partialFailureSources = new Set<string>();
 
   for (const sym of symbols) {
     // Stablecoins = $1
@@ -40,7 +49,14 @@ export async function fetchPrices(symbols: string[]): Promise<Record<string, num
     }
   }
 
-  if (toFetch.size === 0) return prices;
+  if (toFetch.size === 0) {
+    return {
+      prices,
+      missingSymbols: [],
+      partialFailureSources: [],
+      timestamp: new Date().toISOString(),
+    };
+  }
 
   // Build ticker pairs
   const pairs = [...toFetch].map((s) => `${s}/USDT`);
@@ -60,14 +76,14 @@ export async function fetchPrices(symbols: string[]): Promise<Record<string, num
         // Also set the canonical mapped symbol so group-level lookups (e.g. prices['BTC']) work
         if (mapped !== sym && !prices[mapped]) prices[mapped] = tickers[tickerKey].last;
       } else {
-        prices[sym] = 0;
+        missingSymbols.add(sym);
       }
     }
   } catch (e: any) {
     console.error('[Price] Fetch tickers failed:', e.message);
-    // Fill zeros for missing
+    partialFailureSources.add('binance');
     for (const sym of symbols) {
-      if (prices[sym] === undefined) prices[sym] = 0;
+      if (prices[sym] === undefined) missingSymbols.add(sym);
     }
   }
 
@@ -76,5 +92,10 @@ export async function fetchPrices(symbols: string[]): Promise<Record<string, num
     if (key.startsWith('__map_')) delete prices[key];
   }
 
-  return prices;
+  return {
+    prices,
+    missingSymbols: [...missingSymbols],
+    partialFailureSources: [...partialFailureSources],
+    timestamp: new Date().toISOString(),
+  };
 }

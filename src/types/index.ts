@@ -19,6 +19,15 @@ export interface TokenPosition {
   totalUsdValue: number;
 }
 
+export interface PositionsSnapshot {
+  positions: TokenPosition[];
+  prices: Record<string, number>;
+  timestamp: string;
+  isStale: boolean;
+  missingSymbols: string[];
+  partialFailureSources: string[];
+}
+
 // --- 快照 ---
 export interface PortfolioSnapshot {
   id: string;
@@ -94,6 +103,15 @@ export interface YieldsData {
   morpho_usdc: { apy: number | null; chain: string; vault: string };
   hlp: { apy: number | null };
   updatedAt?: string;
+  partialFailureSources?: string[];
+  isStale?: boolean;
+}
+
+export interface PriceSnapshot {
+  prices: Record<string, number>;
+  missingSymbols: string[];
+  partialFailureSources: string[];
+  timestamp: string;
 }
 
 // --- 设置 ---

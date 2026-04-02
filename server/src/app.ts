@@ -10,6 +10,7 @@ import pnlRouter from './routes/pnl.js';
 import pricesRouter from './routes/prices.js';
 import settingsRouter from './routes/settings.js';
 import yieldsRouter from './routes/yields.js';
+import indicatorsRouter from './routes/indicators.js';
 
 const app = express();
 
@@ -25,6 +26,7 @@ app.use('/api/pnl', pnlRouter);
 app.use('/api/prices', pricesRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/yields', yieldsRouter);
+app.use('/api/indicators', indicatorsRouter);
 
 // Health check
 app.get('/api/health', (_req, res) => {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../store/useStore';
-import { API_BASE } from '../config/chains';
+import { apiFetch } from '../lib/api';
 
 const CHAIN_TYPES = [
   { id: 'EVM', label: 'EVM', desc: 'Ethereum / Base / BSC / Arbitrum 等多链' },
@@ -141,7 +141,7 @@ function InlineEdit({ value, onSave, readonly }: { value: string; onSave: (v: st
 }
 
 export default function WalletManagement() {
-  const { wallets, manualAssets, fetchWallets, fetchManualAssets, authMode } = useStore();
+  const { wallets, manualAssets, fetchWallets, fetchManualAssets, authMode, initializeApp } = useStore();
   const isAdmin = authMode === 'admin';
   const [walletForm, setWalletForm] = useState({ label: '', address: '', chainType: 'EVM' });
   const [manualForm, setManualForm] = useState({ label: '', baseToken: 'STABLE', amount: '', platform: '' });
@@ -149,17 +149,15 @@ export default function WalletManagement() {
   const [savingManual, setSavingManual] = useState(false);
 
   useEffect(() => {
-    fetchWallets();
-    fetchManualAssets();
+    initializeApp();
   }, []);
 
   const addWallet = async () => {
     if (!walletForm.label || !walletForm.address) return;
     setSavingWallet(true);
     try {
-      await fetch(`${API_BASE}/api/wallets`, {
+      await apiFetch('/api/wallets', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ label: walletForm.label, address: walletForm.address, chains: resolveChains(walletForm.chainType) }),
       });
       setWalletForm({ label: '', address: '', chainType: 'EVM' });
@@ -168,14 +166,13 @@ export default function WalletManagement() {
   };
 
   const deleteWallet = async (id: string) => {
-    await fetch(`${API_BASE}/api/wallets/${id}`, { method: 'DELETE' });
+    await apiFetch(`/api/wallets/${id}`, { method: 'DELETE' });
     fetchWallets();
   };
 
   const updateWalletLabel = async (id: string, label: string) => {
-    await fetch(`${API_BASE}/api/wallets/${id}`, {
+    await apiFetch(`/api/wallets/${id}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ label }),
     });
     fetchWallets();
@@ -185,9 +182,8 @@ export default function WalletManagement() {
     if (!manualForm.label || !manualForm.amount) return;
     setSavingManual(true);
     try {
-      await fetch(`${API_BASE}/api/positions/manual`, {
+      await apiFetch('/api/positions/manual', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ label: manualForm.label, baseToken: manualForm.baseToken, amount: parseFloat(manualForm.amount), platform: manualForm.platform }),
       });
       setManualForm({ label: '', baseToken: 'STABLE', amount: '', platform: '' });
@@ -196,16 +192,15 @@ export default function WalletManagement() {
   };
 
   const deleteManualAsset = async (id: string) => {
-    await fetch(`${API_BASE}/api/positions/manual/${id}`, { method: 'DELETE' });
+    await apiFetch(`/api/positions/manual/${id}`, { method: 'DELETE' });
     fetchManualAssets();
   };
 
   const updateManualLabel = async (id: string, label: string) => {
     const asset = manualAssets.find((a) => a.id === id);
     if (!asset) return;
-    await fetch(`${API_BASE}/api/positions/manual`, {
+    await apiFetch('/api/positions/manual', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, label, baseToken: asset.baseToken, amount: asset.amount, platform: asset.platform }),
     });
     fetchManualAssets();
@@ -214,9 +209,8 @@ export default function WalletManagement() {
   const updateManualAmount = async (id: string, amount: number) => {
     const asset = manualAssets.find((a) => a.id === id);
     if (!asset) return;
-    await fetch(`${API_BASE}/api/positions/manual`, {
+    await apiFetch('/api/positions/manual', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, label: asset.label, baseToken: asset.baseToken, amount, platform: asset.platform }),
     });
     fetchManualAssets();

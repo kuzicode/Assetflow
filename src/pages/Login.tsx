@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store/useStore';
-import { API_BASE } from '../config/chains';
+import { apiFetch } from '../lib/api';
 
 export default function Login() {
   const navigate = useNavigate();
-  const { setAuthMode } = useStore();
+  const { setAuthState } = useStore();
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
@@ -17,26 +17,21 @@ export default function Login() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`${API_BASE}/api/auth/login`, {
+      const result = await apiFetch('/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password }),
       });
-      if (res.ok) {
-        setAuthMode('admin');
-        navigate('/');
-      } else {
-        setError('密码错误');
-      }
-    } catch {
-      setError('连接失败，请检查服务器');
+      setAuthState({ mode: 'admin', token: result.token });
+      navigate('/');
+    } catch (error: any) {
+      setError(error.message || '连接失败，请检查服务器');
     } finally {
       setLoading(false);
     }
   };
 
   const handleGuest = () => {
-    setAuthMode('guest');
+    setAuthState({ mode: 'guest', token: null });
     navigate('/');
   };
 
@@ -62,7 +57,7 @@ export default function Login() {
         {/* Brand */}
         <header className="text-center mb-20 space-y-4">
           <h1 className="font-headline text-5xl font-bold tracking-tight text-primary">Assetflow</h1>
-          <p className="text-on-surface-variant tracking-widest font-light text-sm uppercase">加密资产管理系统</p>
+          <p className="text-on-surface-variant tracking-widest font-light text-sm uppercase">加密货币数据看板</p>
         </header>
 
         {/* Login section */}

@@ -1,15 +1,14 @@
 import { create } from 'zustand';
-import type { TokenPosition, PnlRecord, RevenueOverview, ManualAsset, Wallet, AppSettings, YieldsData } from '../types';
-import { API_BASE } from '../config/chains';
+import type { AppSettings, ManualAsset, PnlRecord, PositionsSnapshot, PriceSnapshot, RevenueOverview, TokenPosition, Wallet, YieldsData } from '../types';
+import { apiFetch } from '../lib/api';
 
 const POSITIONS_CACHE_KEY = 'assetflow_positions_cache';
 
-function getTodayUTC(): string {
+function getTodayUTC() {
   return new Date().toISOString().slice(0, 10);
 }
 
 interface AppState {
-  // Data
   positions: TokenPosition[];
   weeklyPnl: PnlRecord[];
   monthlyPnl: PnlRecord[];
@@ -21,16 +20,17 @@ interface AppState {
   spotPrices: Record<string, number>;
   yields: YieldsData | null;
   positionsUpdatedAt: string | null;
-
-  // Auth
+  positionsIsStale: boolean;
+  positionMissingSymbols: string[];
+  positionFailureSources: string[];
+  spotPriceFailureSources: string[];
   authMode: 'admin' | 'guest' | null;
-  setAuthMode: (mode: 'admin' | 'guest' | null) => void;
-
-  // UI
+  authToken: string | null;
   loading: boolean;
   error: string | null;
-
-  // Actions
+  initialized: boolean;
+  setAuthState: (state: { mode: 'admin' | 'guest' | null; token?: string | null }) => void;
+  initializeApp: () => Promise<void>;
   loadPositions: () => Promise<void>;
   fetchPositions: () => Promise<void>;
   fetchWeeklyPnl: () => Promise<void>;
@@ -49,16 +49,61 @@ interface AppState {
   setError: (error: string | null) => void;
 }
 
-const api = async (path: string, options?: RequestInit) => {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
-  if (!res.ok) throw new Error(`API error: ${res.status}`);
-  return res.json();
-};
+function isAuthError(error: unknown) {
+  return error instanceof Error && /401|authentication required/i.test(error.message);
+}
 
-export const useStore = create<AppState>((set) => ({
+function getPositionsRequest(authMode: 'admin' | 'guest' | null, authToken: string | null) {
+  const canForceRefresh = authMode === 'admin' && !!authToken;
+  return {
+    path: canForceRefresh ? '/api/positions/refresh' : '/api/positions',
+    method: canForceRefresh ? 'POST' : 'GET',
+  } as const;
+}
+
+function readCachedPositions(): PositionsSnapshot | null {
+  try {
+    const raw = localStorage.getItem(POSITIONS_CACHE_KEY);
+    if (!raw) return null;
+    const cached = JSON.parse(raw);
+    if (cached.date !== getTodayUTC()) return null;
+    return {
+      positions: cached.positions || [],
+      prices: cached.prices || {},
+      timestamp: cached.timestamp || new Date().toISOString(),
+      isStale: !!cached.isStale,
+      missingSymbols: cached.missingSymbols || [],
+      partialFailureSources: cached.partialFailureSources || [],
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedPositions(snapshot: PositionsSnapshot) {
+  localStorage.setItem(POSITIONS_CACHE_KEY, JSON.stringify({
+    date: getTodayUTC(),
+    positions: snapshot.positions,
+    prices: snapshot.prices,
+    timestamp: snapshot.timestamp,
+    isStale: snapshot.isStale,
+    missingSymbols: snapshot.missingSymbols,
+    partialFailureSources: snapshot.partialFailureSources,
+  }));
+}
+
+function setPositionState(snapshot: PositionsSnapshot) {
+  return {
+    positions: snapshot.positions,
+    prices: snapshot.prices,
+    positionsUpdatedAt: snapshot.timestamp,
+    positionsIsStale: snapshot.isStale,
+    positionMissingSymbols: snapshot.missingSymbols,
+    positionFailureSources: snapshot.partialFailureSources,
+  };
+}
+
+export const useStore = create<AppState>((set, get) => ({
   positions: [],
   weeklyPnl: [],
   monthlyPnl: [],
@@ -70,129 +115,159 @@ export const useStore = create<AppState>((set) => ({
   spotPrices: {},
   yields: null,
   positionsUpdatedAt: null,
+  positionsIsStale: false,
+  positionMissingSymbols: [],
+  positionFailureSources: [],
+  spotPriceFailureSources: [],
   authMode: (localStorage.getItem('authMode') as 'admin' | 'guest' | null) ?? null,
-  setAuthMode: (mode) => {
-    if (mode) localStorage.setItem('authMode', mode);
-    else localStorage.removeItem('authMode');
-    set({ authMode: mode });
-  },
+  authToken: localStorage.getItem('assetflow_admin_token'),
   loading: false,
   error: null,
+  initialized: false,
+
+  setAuthState: ({ mode, token }) => {
+    if (mode) localStorage.setItem('authMode', mode);
+    else localStorage.removeItem('authMode');
+
+    if (token) localStorage.setItem('assetflow_admin_token', token);
+    else if (mode !== 'admin') localStorage.removeItem('assetflow_admin_token');
+
+    set({
+      authMode: mode,
+      authToken: token ?? (mode === 'admin' ? get().authToken : null),
+    });
+  },
+
+  initializeApp: async () => {
+    if (get().initialized) return;
+    const cached = readCachedPositions();
+    if (cached) set(setPositionState(cached));
+
+    await Promise.all([
+      get().fetchRevenueOverview(),
+      get().fetchWeeklyPnl(),
+      get().fetchMonthlyPnl(),
+      get().fetchManualAssets(),
+      get().fetchWallets(),
+      get().fetchSettings(),
+      get().fetchSpotPrices(),
+      get().fetchYields(),
+      get().loadPositions(),
+    ]);
+
+    set({ initialized: true });
+  },
 
   loadPositions: async () => {
-    try {
-      const cached = localStorage.getItem(POSITIONS_CACHE_KEY);
-      if (cached) {
-        const { date, positions, prices, timestamp } = JSON.parse(cached);
-        if (date === getTodayUTC()) {
-          set({ positions, prices, positionsUpdatedAt: timestamp || null });
-          return;
-        }
-      }
-    } catch {}
-    // No valid cache — fetch fresh
+    const cached = readCachedPositions();
+    if (cached) {
+      set(setPositionState(cached));
+    }
     set({ loading: true, error: null });
     try {
-      const data = await api('/api/positions/fetch', { method: 'POST', body: '{}' });
-      localStorage.setItem(POSITIONS_CACHE_KEY, JSON.stringify({
-        date: getTodayUTC(),
-        positions: data.positions,
-        prices: data.prices || {},
-        timestamp: data.timestamp || new Date().toISOString(),
-      }));
-      set({ positions: data.positions, prices: data.prices || {}, positionsUpdatedAt: data.timestamp || null, loading: false });
-    } catch (e: any) {
-      set({ error: e.message, loading: false });
+      const data = await apiFetch('/api/positions');
+      writeCachedPositions(data);
+      set({ ...setPositionState(data), loading: false });
+    } catch (error: unknown) {
+      if (cached) {
+        set({ loading: false, error: isAuthError(error) ? '登录状态已失效，请重新登录后执行管理员操作。' : (error instanceof Error ? error.message : '加载资产失败') });
+        return;
+      }
+      set({ error: error instanceof Error ? error.message : '加载资产失败', loading: false });
     }
   },
 
   fetchPositions: async () => {
     set({ loading: true, error: null });
     try {
-      const data = await api('/api/positions/fetch', { method: 'POST', body: '{}' });
-      localStorage.setItem(POSITIONS_CACHE_KEY, JSON.stringify({
-        date: getTodayUTC(),
-        positions: data.positions,
-        prices: data.prices || {},
-        timestamp: data.timestamp || new Date().toISOString(),
-      }));
-      set({ positions: data.positions, prices: data.prices || {}, positionsUpdatedAt: data.timestamp || null, loading: false });
-    } catch (e: any) {
-      set({ error: e.message, loading: false });
+      const { authMode, authToken } = get();
+      const request = getPositionsRequest(authMode, authToken);
+      let data;
+      try {
+        data = await apiFetch(request.path, { method: request.method });
+      } catch (error: unknown) {
+        if (request.method === 'POST' && isAuthError(error)) {
+          data = await apiFetch('/api/positions', { method: 'GET' });
+          set({ error: '管理员登录已过期，已切换为只读刷新结果。' });
+        } else {
+          throw error;
+        }
+      }
+      writeCachedPositions(data);
+      set({ ...setPositionState(data), loading: false });
+    } catch (error: unknown) {
+      set({ error: error instanceof Error ? error.message : '刷新资产失败', loading: false });
     }
   },
 
   fetchWeeklyPnl: async () => {
     try {
-      const data = await api('/api/pnl/weekly');
+      const data = await apiFetch('/api/pnl/weekly');
       set({ weeklyPnl: data });
-    } catch (e: any) {
-      set({ error: e.message });
+    } catch (error: any) {
+      set({ error: error.message });
     }
   },
 
   fetchMonthlyPnl: async () => {
     try {
-      const data = await api('/api/pnl/monthly');
+      const data = await apiFetch('/api/pnl/monthly');
       set({ monthlyPnl: data });
-    } catch (e: any) {
-      set({ error: e.message });
+    } catch (error: any) {
+      set({ error: error.message });
     }
   },
 
   createWeeklyPnl: async (data) => {
-    const record = await api('/api/pnl/weekly', {
+    const record = await apiFetch('/api/pnl/weekly', {
       method: 'POST',
       body: JSON.stringify(data),
     });
     set((state) => ({
-      weeklyPnl: [record, ...state.weeklyPnl]
-        .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime()),
+      weeklyPnl: [record, ...state.weeklyPnl].sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime()),
     }));
   },
 
   createMonthlyPnl: async (data) => {
-    const record = await api('/api/pnl/monthly', {
+    const record = await apiFetch('/api/pnl/monthly', {
       method: 'POST',
       body: JSON.stringify(data),
     });
     set((state) => ({
-      monthlyPnl: [record, ...state.monthlyPnl].sort(
-        (a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime()
-      ),
+      monthlyPnl: [record, ...state.monthlyPnl].sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime()),
     }));
   },
 
   updatePnlRecord: async (id, data) => {
-    const record = await api(`/api/pnl/${id}`, {
+    const record = await apiFetch(`/api/pnl/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     });
     set((state) => ({
-      weeklyPnl: state.weeklyPnl.map((r) => (r.id === id ? record : r)),
-      monthlyPnl: state.monthlyPnl.map((r) => (r.id === id ? record : r)),
+      weeklyPnl: state.weeklyPnl.map((item) => (item.id === id ? record : item)),
+      monthlyPnl: state.monthlyPnl.map((item) => (item.id === id ? record : item)),
     }));
   },
 
   deletePnlRecord: async (id) => {
-    await api(`/api/pnl/${id}`, { method: 'DELETE' });
+    await apiFetch(`/api/pnl/${id}`, { method: 'DELETE' });
     set((state) => ({
-      weeklyPnl: state.weeklyPnl.filter((r) => r.id !== id),
-      monthlyPnl: state.monthlyPnl.filter((r) => r.id !== id),
+      weeklyPnl: state.weeklyPnl.filter((item) => item.id !== id),
+      monthlyPnl: state.monthlyPnl.filter((item) => item.id !== id),
     }));
   },
 
   fetchRevenueOverview: async () => {
     try {
-      const data = await api('/api/pnl/revenue');
+      const data = await apiFetch('/api/pnl/revenue');
       set({ revenueOverview: data });
-    } catch (e: any) {
-      set({ error: e.message });
+    } catch (error: any) {
+      set({ error: error.message });
     }
   },
 
   updateRevenueOverview: async (data) => {
-    const result = await api('/api/pnl/revenue', {
+    const result = await apiFetch('/api/pnl/revenue', {
       method: 'PUT',
       body: JSON.stringify(data),
     });
@@ -201,46 +276,49 @@ export const useStore = create<AppState>((set) => ({
 
   fetchManualAssets: async () => {
     try {
-      const data = await api('/api/positions/manual');
+      const data = await apiFetch('/api/positions/manual');
       set({ manualAssets: data });
-    } catch (e: any) {
-      set({ error: e.message });
+    } catch (error: any) {
+      set({ error: error.message });
     }
   },
 
   fetchWallets: async () => {
     try {
-      const data = await api('/api/wallets');
+      const data = await apiFetch('/api/wallets');
       set({ wallets: data });
-    } catch (e: any) {
-      set({ error: e.message });
+    } catch (error: any) {
+      set({ error: error.message });
     }
   },
 
   fetchSettings: async () => {
     try {
-      const data = await api('/api/settings');
+      const data = await apiFetch('/api/settings');
       set({ settings: data });
-    } catch (e: any) {
-      set({ error: e.message });
+    } catch (error: any) {
+      set({ error: error.message });
     }
   },
 
   fetchSpotPrices: async () => {
     try {
-      const data = await api('/api/prices?symbols=BTC,ETH,SOL,BNB');
-      set({ spotPrices: data });
-    } catch (e: any) {
-      set({ error: e.message });
+      const data: PriceSnapshot = await apiFetch('/api/prices?symbols=BTC,ETH,SOL,BNB');
+      set({
+        spotPrices: data.prices,
+        spotPriceFailureSources: data.partialFailureSources,
+      });
+    } catch (error: any) {
+      set({ error: error.message });
     }
   },
 
   fetchYields: async (force = false) => {
     try {
-      const data = await api(`/api/yields${force ? '?force=1' : ''}`);
+      const data = await apiFetch(`/api/yields${force ? '?force=1' : ''}`);
       set({ yields: data });
-    } catch (e: any) {
-      set({ error: e.message });
+    } catch (error: any) {
+      set({ error: error.message });
     }
   },
 

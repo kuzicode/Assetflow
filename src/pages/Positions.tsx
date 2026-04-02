@@ -61,13 +61,11 @@ const SOURCE_LABELS: Record<string, string> = {
 
 export default function Positions() {
   const navigate = useNavigate();
-  const { positions, manualAssets, revenueOverview, prices, positionsUpdatedAt, loading, authMode, loadPositions, fetchPositions, fetchManualAssets, fetchRevenueOverview } = useStore();
+  const { positions, manualAssets, revenueOverview, prices, positionsUpdatedAt, loading, authMode, initializeApp, fetchPositions } = useStore();
   const isAdmin = authMode === 'admin';
 
   useEffect(() => {
-    loadPositions();
-    fetchManualAssets();
-    fetchRevenueOverview();
+    initializeApp();
   }, []);
 
   const manualByToken: Record<string, typeof manualAssets> = {};
@@ -78,12 +76,7 @@ export default function Positions() {
   }
 
   // 计算总资产（USDT折算）
-  const onChainUsd = positions.reduce((s, p) => s + p.totalUsdValue, 0);
-  const manualUsd = manualAssets.reduce((s, asset) => {
-    const price = asset.baseToken === 'STABLE' ? 1 : (prices[asset.baseToken] || 0);
-    return s + asset.amount * price;
-  }, 0);
-  const totalUsd = onChainUsd + manualUsd;
+  const totalUsd = positions.reduce((s, p) => s + p.totalUsdValue, 0);
 
   const refreshedTimeLabel = positionsUpdatedAt
     ? new Date(positionsUpdatedAt).toLocaleTimeString('zh-CN', { hour12: false })
@@ -95,7 +88,10 @@ export default function Positions() {
       <section>
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
           <div>
-            <h2 className="text-on-surface-variant font-medium text-sm mb-2">资产总额</h2>
+            <h2 className="text-on-surface-variant font-medium text-sm mb-2">
+              浮动资产总额
+              <span className="ml-1.5 text-xs font-normal text-on-surface-variant/50">（链上数据 + 交易所数据）</span>
+            </h2>
             {(positions.length > 0 || manualAssets.length > 0) ? (
               <div className="flex items-baseline gap-3">
                 <span className="text-5xl font-bold font-headline tracking-tight text-on-surface">
@@ -119,7 +115,7 @@ export default function Positions() {
               本日刷新时间：<span className="font-mono-data">{refreshedTimeLabel}</span>
             </span>
             <button
-              onClick={() => { fetchPositions(); fetchManualAssets(); fetchRevenueOverview(); }}
+              onClick={() => { fetchPositions(); }}
               disabled={loading}
               className="flex items-center gap-2 px-6 py-3 bg-primary text-on-primary rounded-2xl text-sm font-bold hover:opacity-90 active:scale-95 transition-all shadow-lg shadow-primary/20 disabled:opacity-60"
             >

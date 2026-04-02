@@ -32,7 +32,8 @@ CREATE TABLE IF NOT EXISTS pnl_records (
   last_uniswap_value REAL NOT NULL DEFAULT 0,
   last_morpho_value REAL NOT NULL DEFAULT 0,
   last_hlp_value REAL NOT NULL DEFAULT 0,
-  last_auto_update_at TEXT
+  last_auto_update_at TEXT,
+  base_pnl REAL NOT NULL DEFAULT 0
 );
 
 -- 收益总览（手动初始化，后续自动更新）
@@ -72,6 +73,12 @@ CREATE TABLE IF NOT EXISTS wallets (
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  version INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  applied_at TEXT NOT NULL
 );
 
 -- 默认设置

@@ -11,8 +11,8 @@ router.get('/', async (req, res) => {
       return res.status(400).json({ error: 'Missing symbols parameter' });
     }
 
-    const prices = await fetchPrices(symbols);
-    res.json({ prices, timestamp: new Date().toISOString() });
+    const snapshot = await fetchPrices(symbols);
+    res.json(snapshot);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

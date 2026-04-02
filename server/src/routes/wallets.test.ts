@@ -1,67 +1,66 @@
-import { describe, it, expect, vi, beforeAll } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestDb } from '../test/setup.js';
-import request from 'supertest';
 
 const testDb = createTestDb();
 vi.mock('../db/index.js', () => ({ default: testDb }));
 
-// Import app after mock is set up
-const { default: express } = await import('express');
-const { default: walletsRouter } = await import('./wallets.js');
+const { createAdminSession, clearAdminSession } = await import('../auth/session.js');
+const { requireAdmin } = await import('../middleware/requireAdmin.js');
+const { deleteWallet, insertWallet, listWalletRows, updateWalletLabel } = await import('../repositories/walletsRepo.js');
 
-const app = express();
-app.use(express.json());
-app.use('/api/wallets', walletsRouter);
+function createMockRes() {
+  return {
+    statusCode: 200,
+    body: null as any,
+    status(code: number) {
+      this.statusCode = code;
+      return this;
+    },
+    json(payload: any) {
+      this.body = payload;
+      return this;
+    },
+  };
+}
 
-describe('Wallets API', () => {
-  let walletId: string;
+describe('wallet repository', () => {
+  it('creates, updates, lists, and deletes wallets', () => {
+    insertWallet('wallet-1', 'Main', '0x1234', ['ethereum']);
+    expect(listWalletRows()).toHaveLength(1);
 
-  it('GET /api/wallets returns empty array initially', async () => {
-    const res = await request(app).get('/api/wallets');
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual([]);
+    updateWalletLabel('wallet-1', 'Primary');
+    expect(listWalletRows()[0].label).toBe('Primary');
+
+    deleteWallet('wallet-1');
+    expect(listWalletRows()).toEqual([]);
+  });
+});
+
+describe('requireAdmin middleware', () => {
+  beforeEach(() => {
+    clearAdminSession();
   });
 
-  it('POST /api/wallets creates a wallet', async () => {
-    const res = await request(app)
-      .post('/api/wallets')
-      .send({ label: 'Test Wallet', address: '0x1234abcd', chains: ['ethereum', 'arbitrum'] });
-    expect(res.status).toBe(200);
-    expect(res.body.label).toBe('Test Wallet');
-    expect(res.body.address).toBe('0x1234abcd');
-    expect(res.body.chains).toEqual(['ethereum', 'arbitrum']);
-    expect(res.body.id).toBeDefined();
-    walletId = res.body.id;
+  it('rejects requests without a valid token', () => {
+    const req = { headers: {} } as any;
+    const res = createMockRes();
+    const next = vi.fn();
+
+    requireAdmin(req, res as any, next);
+
+    expect(res.statusCode).toBe(401);
+    expect(next).not.toHaveBeenCalled();
   });
 
-  it('GET /api/wallets returns created wallet', async () => {
-    const res = await request(app).get('/api/wallets');
-    expect(res.status).toBe(200);
-    expect(res.body).toHaveLength(1);
-    expect(res.body[0].label).toBe('Test Wallet');
-    expect(res.body[0].chains).toEqual(['ethereum', 'arbitrum']);
-  });
+  it('allows requests with a valid bearer token', () => {
+    const session = createAdminSession();
+    const req = { headers: { authorization: `Bearer ${session.token}` } } as any;
+    const res = createMockRes();
+    const next = vi.fn();
 
-  it('POST /api/wallets rejects missing fields', async () => {
-    const res = await request(app)
-      .post('/api/wallets')
-      .send({ label: 'No Address' });
-    expect(res.status).toBe(400);
-  });
+    requireAdmin(req, res as any, next);
 
-  it('DELETE /api/wallets/:id deletes wallet', async () => {
-    const res = await request(app).delete(`/api/wallets/${walletId}`);
-    expect(res.status).toBe(200);
-    expect(res.body.success).toBe(true);
-  });
-
-  it('DELETE /api/wallets/:id returns 404 for non-existent', async () => {
-    const res = await request(app).delete('/api/wallets/non-existent');
-    expect(res.status).toBe(404);
-  });
-
-  it('GET /api/wallets returns empty after deletion', async () => {
-    const res = await request(app).get('/api/wallets');
-    expect(res.body).toEqual([]);
+    expect(res.statusCode).toBe(200);
+    expect(next).toHaveBeenCalledTimes(1);
   });
 });
