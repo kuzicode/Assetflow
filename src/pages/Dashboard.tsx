@@ -218,13 +218,14 @@ export default function Dashboard() {
   const isLatestWeekly = (rec: any) => weeklyPnl.length > 0 && weeklyPnl[0].id === rec.id;
   const latestNumberClass = (isLatest: boolean) => (isLatest ? 'text-yellow-600' : '');
   const weekLabel = (rec: any, list: any[]) => {
-    // 用 endDate 的月份来归类（如 0131-0205 视为 2月第1周），并按同月顺序编号，避免 0107 这种导致“第1周”重复
-    const end = new Date(`${rec.endDate}T00:00:00`);
-    const month = end.getMonth() + 1;
+    // in_progress 记录的 endDate 会持续推进到今天，用 startDate 定归属月份
+    // settled/locked 用 endDate（如 0131-0205 视为 2月第1周）
+    const ref = rec.status === 'in_progress' ? rec.startDate : rec.endDate;
+    const month = new Date(`${ref}T00:00:00`).getMonth() + 1;
     const sameMonth = list
       .filter((r) => {
-        const e = new Date(`${r.endDate}T00:00:00`);
-        return e.getMonth() + 1 === month;
+        const rRef = r.status === 'in_progress' ? r.startDate : r.endDate;
+        return new Date(`${rRef}T00:00:00`).getMonth() + 1 === month;
       })
       .slice()
       .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
@@ -237,8 +238,9 @@ export default function Dashboard() {
     .slice()
     .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
     .map((r) => {
-      // 月度按结束日期归属月份，避免 0131-0228 被显示成 1月
-      const d = new Date(`${r.endDate}T00:00:00`);
+      // in_progress 用 startDate 避免 endDate 推进到下月被错误归类；settled/locked 用 endDate（如 0131-0228 → 2月）
+      const ref = r.status === 'in_progress' ? r.startDate : r.endDate;
+      const d = new Date(`${ref}T00:00:00`);
       const label = `${d.getMonth() + 1}月`;
       return { label, pnl: Number(r.pnl || 0) };
     });
@@ -624,7 +626,8 @@ export default function Dashboard() {
                   <tbody className="divide-y divide-surface-container">
                     {monthlyPageRows.length > 0 ? (
                       monthlyPageRows.map((rec) => {
-                        const d = new Date(rec.endDate + 'T00:00:00');
+                        const ref = rec.status === 'in_progress' ? rec.startDate : rec.endDate;
+                        const d = new Date(ref + 'T00:00:00');
                         const monthLabel = `${d.getFullYear()}年${d.getMonth() + 1}月`;
                         const inEdit = editingId === rec.id;
                         const latest = isLatestMonthly(rec);
