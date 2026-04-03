@@ -404,14 +404,14 @@ export default function Dashboard() {
               </div>
               <div className="space-y-1">
                 <p className="text-xs font-medium text-on-surface-variant/70 uppercase">账面现金价值</p>
-                <p className="text-xl font-headline font-bold text-outline">
-                  {r ? r.cashValue.toLocaleString() : '0'}
+                <p className="text-xl font-headline font-bold text-outline/50">
+                  {r ? Math.round(r.cashValue).toLocaleString() : '0'}
                 </p>
               </div>
               <div className="space-y-1">
                 <p className="text-xs font-medium text-on-surface-variant/70 uppercase">账面变动损益</p>
-                <p className="text-xl font-headline font-bold text-outline">
-                  {r ? (() => { const d = r.cashValue - r.fairValue; return `${d >= 0 ? '+' : ''}${d.toLocaleString()}`; })() : '0'}
+                <p className="text-xl font-headline font-bold text-outline/50">
+                  {r ? (() => { const d = Math.round(r.cashValue - r.fairValue); return `${d >= 0 ? '+' : ''}${d.toLocaleString()}`; })() : '0'}
                 </p>
               </div>
             </div>
