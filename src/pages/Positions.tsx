@@ -89,7 +89,7 @@ export default function Positions() {
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
           <div>
             <h2 className="text-on-surface-variant font-medium text-sm mb-2">
-              浮动资产总额
+              账面现金价值
               <span className="ml-1.5 text-xs font-normal text-on-surface-variant/50">（链上数据 + 交易所数据）</span>
             </h2>
             {(positions.length > 0 || manualAssets.length > 0) ? (

@@ -404,20 +404,15 @@ export default function Dashboard() {
               </div>
               <div className="space-y-1">
                 <p className="text-xs font-medium text-on-surface-variant/70 uppercase">账面现金价值</p>
-                <p className="text-xl font-headline font-bold text-on-surface">
+                <p className="text-xl font-headline font-bold text-outline">
                   {r ? r.cashValue.toLocaleString() : '0'}
                 </p>
               </div>
               <div className="space-y-1">
                 <p className="text-xs font-medium text-on-surface-variant/70 uppercase">账面变动损益</p>
-                {r ? (() => {
-                  const delta = r.cashValue - r.fairValue;
-                  return (
-                    <p className={`text-xl font-headline font-bold ${pnlColor(delta)}`}>
-                      {`${delta >= 0 ? '+' : ''}${delta.toLocaleString()}`}
-                    </p>
-                  );
-                })() : <p className="text-xl font-headline font-bold text-on-surface-variant">0</p>}
+                <p className="text-xl font-headline font-bold text-outline">
+                  {r ? (() => { const d = r.cashValue - r.fairValue; return `${d >= 0 ? '+' : ''}${d.toLocaleString()}`; })() : '0'}
+                </p>
               </div>
             </div>
 
