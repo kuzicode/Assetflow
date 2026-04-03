@@ -1,0 +1,13 @@
+{
+  "id": "ea895c25-15f5-46bc-8ae7-4ebd91d438da",
+  "periodLabel": "2026",
+  "startDate": "2026-01-01",
+  "endDate": "2026-03-31",
+  "initialInvestment": 5333035,
+  "fairValue": 5522727,
+  "cashValue": 5316830,
+  "profit": 189692,
+  "returnRate": 0.03556923965434324,
+  "runningDays": 89,
+  "annualizedReturn": 0.14587384802062078
+}

@@ -68,7 +68,7 @@ router.get('/revenue', (_req, res) => {
 
 router.put('/revenue', requireAdmin, (req, res) => {
   const body = req.body || {};
-  if (typeof body.periodLabel !== 'string' || typeof body.startDate !== 'string') {
+  if (typeof body.periodLabel !== 'string' || typeof body.startDate !== 'string' || typeof body.endDate !== 'string') {
     return res.status(400).json({ error: 'Invalid revenue payload' });
   }
   res.json(updateRevenueOverview(body));
@@ -76,8 +76,8 @@ router.put('/revenue', requireAdmin, (req, res) => {
 
 router.delete('/:id', requireAdmin, (req, res) => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const result = deletePnlRecordById(id);
-  if (result.changes === 0) return res.status(404).json({ error: 'Not found' });
+  const deleted = deletePnlRecordById(id);
+  if (!deleted) return res.status(404).json({ error: 'Not found' });
   res.json({ success: true });
 });
 

@@ -47,7 +47,7 @@ export default function Dashboard() {
   const isAdmin = authMode === 'admin';
 
   const [isEditing, setIsEditing] = useState(false);
-  const [formData, setFormData] = useState({ startDate: '', initialInvestment: '', fairValue: '', periodLabel: '' });
+  const [formData, setFormData] = useState({ startDate: '', endDate: '', initialInvestment: '', fairValue: '', cashValue: '', periodLabel: '' });
   const [saving, setSaving] = useState(false);
 
   const [showMonthlyForm, setShowMonthlyForm] = useState(false);
@@ -80,8 +80,10 @@ export default function Dashboard() {
   const handleEditOpen = () => {
     setFormData({
       startDate: revenueOverview?.startDate || '',
+      endDate: revenueOverview?.endDate || '',
       initialInvestment: String(revenueOverview?.initialInvestment || ''),
       fairValue: String(revenueOverview?.fairValue || ''),
+      cashValue: String(revenueOverview?.cashValue || ''),
       periodLabel: revenueOverview?.periodLabel || '',
     });
     setIsEditing(true);
@@ -90,24 +92,13 @@ export default function Dashboard() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const initialInvestment = parseFloat(formData.initialInvestment) || 0;
-      const fairValue = parseFloat(formData.fairValue) || 0;
-      const cashValue = positionsTotalUsd;
-      const profit = fairValue - initialInvestment;
-      const returnRate = initialInvestment > 0 ? profit / initialInvestment : 0;
-      const start = new Date(formData.startDate);
-      const runningDays = Math.max(1, Math.round((Date.now() - start.getTime()) / 86400000));
-      const annualizedReturn = returnRate / runningDays * 365;
       await updateRevenueOverview({
         periodLabel: formData.periodLabel,
         startDate: formData.startDate,
-        initialInvestment,
-        fairValue,
-        cashValue,
-        profit,
-        returnRate,
-        runningDays,
-        annualizedReturn,
+        endDate: formData.endDate,
+        initialInvestment: parseFloat(formData.initialInvestment) || 0,
+        fairValue: parseFloat(formData.fairValue) || 0,
+        cashValue: parseFloat(formData.cashValue) || 0,
       });
       setIsEditing(false);
     } finally {
@@ -207,12 +198,12 @@ export default function Dashboard() {
   const bnbDisplayUsd = bnbPos?.totalUsdValue || 0;
 
   const r = revenueOverview;
-  const latestSettledWeek = weeklyPnl.find((w) => w.status !== 'in_progress');
-  const hasInProgress = weeklyPnl.some((w) => w.status === 'in_progress');
+  const latestSettledWeek = weeklyPnl.find((w) => w.status !== 'pending');
+  const hasInProgress = weeklyPnl.some((w) => w.status === 'pending');
   const runningEndDate = latestSettledWeek ? latestSettledWeek.endDate : new Date().toISOString();
   const runningTime = r ? `${r.periodLabel}:${fmtMMDD(r.startDate)}-${fmtMMDD(runningEndDate)}` : '未设置';
   const runningTimePending = r && hasInProgress;
-  const isInProgress = (rec: any) => rec.status === 'in_progress';
+  const isInProgress = (rec: any) => rec.status === 'pending';
   const rowClass = (rec: any) => isInProgress(rec) ? 'text-yellow-600' : '';
   const isLatestMonthly = (rec: any) => monthlyPnl.length > 0 && monthlyPnl[0].id === rec.id;
   const isLatestWeekly = (rec: any) => weeklyPnl.length > 0 && weeklyPnl[0].id === rec.id;
@@ -220,11 +211,11 @@ export default function Dashboard() {
   const weekLabel = (rec: any, list: any[]) => {
     // in_progress 记录的 endDate 会持续推进到今天，用 startDate 定归属月份
     // settled/locked 用 endDate（如 0131-0205 视为 2月第1周）
-    const ref = rec.status === 'in_progress' ? rec.startDate : rec.endDate;
+    const ref = rec.status === 'pending' ? rec.startDate : rec.endDate;
     const month = new Date(`${ref}T00:00:00`).getMonth() + 1;
     const sameMonth = list
       .filter((r) => {
-        const rRef = r.status === 'in_progress' ? r.startDate : r.endDate;
+        const rRef = r.status === 'pending' ? r.startDate : r.endDate;
         return new Date(`${rRef}T00:00:00`).getMonth() + 1 === month;
       })
       .slice()
@@ -239,7 +230,7 @@ export default function Dashboard() {
     .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
     .map((r) => {
       // in_progress 用 startDate 避免 endDate 推进到下月被错误归类；settled/locked 用 endDate（如 0131-0228 → 2月）
-      const ref = r.status === 'in_progress' ? r.startDate : r.endDate;
+      const ref = r.status === 'pending' ? r.startDate : r.endDate;
       const d = new Date(`${ref}T00:00:00`);
       const label = `${d.getMonth() + 1}月`;
       return { label, pnl: Number(r.pnl || 0) };
@@ -329,6 +320,15 @@ export default function Dashboard() {
                     />
                   </div>
                   <div className="space-y-1">
+                    <label className="text-xs text-on-surface-variant">结束日期</label>
+                    <input
+                      type="date"
+                      value={formData.endDate}
+                      onChange={(e) => setFormData((f) => ({ ...f, endDate: e.target.value }))}
+                      className="w-full bg-surface-container border border-outline-variant rounded-xl px-4 py-2 text-on-surface text-sm focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div className="space-y-1">
                     <label className="text-xs text-on-surface-variant">起始投资额 (USDT)</label>
                     <input
                       type="number"
@@ -358,11 +358,21 @@ export default function Dashboard() {
                       className="w-full bg-surface-container border border-outline-variant rounded-xl px-4 py-2 text-on-surface text-sm focus:outline-none focus:border-primary"
                     />
                   </div>
+                  <div className="space-y-1">
+                    <label className="text-xs text-on-surface-variant">账面现金价值 (USDT)</label>
+                    <input
+                      type="number"
+                      value={formData.cashValue}
+                      onChange={(e) => setFormData((f) => ({ ...f, cashValue: e.target.value }))}
+                      placeholder="0"
+                      className="w-full bg-surface-container border border-outline-variant rounded-xl px-4 py-2 text-on-surface text-sm focus:outline-none focus:border-primary"
+                    />
+                  </div>
                 </div>
                 <div className="flex items-center gap-3 pt-1">
                   <button
                     onClick={handleSave}
-                    disabled={saving || !formData.startDate || !formData.initialInvestment || !formData.fairValue}
+                    disabled={saving || !formData.startDate || !formData.endDate || !formData.initialInvestment || !formData.fairValue}
                     className="px-6 py-2 bg-primary text-on-primary rounded-xl text-sm font-bold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
                   >
                     {saving ? '保存中...' : '保存'}
@@ -626,7 +636,7 @@ export default function Dashboard() {
                   <tbody className="divide-y divide-surface-container">
                     {monthlyPageRows.length > 0 ? (
                       monthlyPageRows.map((rec) => {
-                        const ref = rec.status === 'in_progress' ? rec.startDate : rec.endDate;
+                        const ref = rec.status === 'pending' ? rec.startDate : rec.endDate;
                         const d = new Date(ref + 'T00:00:00');
                         const monthLabel = `${d.getFullYear()}年${d.getMonth() + 1}月`;
                         const inEdit = editingId === rec.id;
@@ -862,7 +872,7 @@ export default function Dashboard() {
                             </td>
                             <td className={`${pnlTdHeadline} ${pnlColor(rec.annualizedReturn)} ${latestNumberClass(latest)}`}>{(rec.annualizedReturn * 100).toFixed(2)}%</td>
                             <td className={pnlTdStatus}>
-                              {isInProgress(rec) ? '进行中待修正' : rec.status === 'locked' ? '已锁定' : '已结算'}
+                              {isInProgress(rec) ? '进行中待修正' : '已结算'}
                             </td>
                             {isAdmin && (
                               <td className={pnlTdAction}>

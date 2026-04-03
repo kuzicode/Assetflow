@@ -1,5 +1,6 @@
 import Database, { type Database as DatabaseType } from 'better-sqlite3';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -15,4 +16,16 @@ export function createTestDb(): DatabaseType {
   db.pragma('foreign_keys = ON');
   db.exec(schema);
   return db;
+}
+
+/**
+ * Create a temporary directory with empty weekly/monthly JSON files for test isolation.
+ * Returns the dir path and a cleanup function.
+ */
+export function createTestPnlDir(): { dir: string; cleanup: () => void } {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pnl-test-'));
+  fs.writeFileSync(path.join(dir, 'weekly_pnl.json'), '{"records":[]}', 'utf-8');
+  fs.writeFileSync(path.join(dir, 'monthly_pnl.json'), '{"records":[]}', 'utf-8');
+  const cleanup = () => fs.rmSync(dir, { recursive: true, force: true });
+  return { dir, cleanup };
 }

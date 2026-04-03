@@ -42,7 +42,7 @@ interface AppState {
   updatePnlRecord: (id: string, data: Partial<PnlRecord>) => Promise<void>;
   deletePnlRecord: (id: string) => Promise<void>;
   fetchRevenueOverview: () => Promise<void>;
-  updateRevenueOverview: (data: Omit<RevenueOverview, 'id'>) => Promise<void>;
+  updateRevenueOverview: (data: { periodLabel: string; startDate: string; endDate: string; initialInvestment: number; fairValue: number; cashValue: number }) => Promise<void>;
   fetchManualAssets: () => Promise<void>;
   fetchWallets: () => Promise<void>;
   fetchSettings: () => Promise<void>;

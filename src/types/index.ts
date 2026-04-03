@@ -52,7 +52,7 @@ export interface PnlRecord {
   days: number;
   annualizedReturn: number;
   isAdjusted: boolean;
-  status?: 'in_progress' | 'settled' | 'locked';
+  status?: 'pending' | 'done';
   autoAccumulate?: boolean;
   editable?: boolean;
   incomeUniswap?: number;
@@ -69,6 +69,7 @@ export interface RevenueOverview {
   id: string;
   periodLabel: string;
   startDate: string;
+  endDate: string;
   initialInvestment: number;
   fairValue: number;
   cashValue: number;

@@ -1,8 +1,9 @@
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { v4 as uuidv4 } from 'uuid';
-import { createTestDb } from '../test/setup.js';
+import { createTestDb, createTestPnlDir } from '../test/setup.js';
 
 const testDb = createTestDb();
+const { dir: testPnlDir, cleanup: cleanupPnlDir } = createTestPnlDir();
 
 const { mockGetPositionsSnapshot } = vi.hoisted(() => ({
   mockGetPositionsSnapshot: vi.fn(async () => ({
@@ -21,6 +22,7 @@ vi.mock('../services/positionsService.js', () => ({
   getPositionsSnapshot: mockGetPositionsSnapshot,
 }));
 
+const { setPnlDataDir } = await import('../repositories/pnlRepo.js');
 const {
   calculatePnlFromSnapshots,
   createMonthlyPnlRecord,
@@ -32,6 +34,8 @@ const {
   updatePnlRecordById,
   updateRevenueOverview,
 } = await import('../services/pnlService.js');
+
+setPnlDataDir(testPnlDir);
 
 describe('pnl service', () => {
   beforeAll(() => {
@@ -49,6 +53,10 @@ describe('pnl service', () => {
     `).run(snap2Id, '2026-03-08T00:00:00Z', 'auto', 5050000, 4950000, '[]', '{}');
   });
 
+  afterAll(() => {
+    cleanupPnlDir();
+  });
+
   it('returns empty arrays initially', () => {
     expect(getWeeklyPnlRecords({})).toEqual([]);
     expect(getMonthlyPnlRecords({})).toEqual([]);
@@ -56,46 +64,46 @@ describe('pnl service', () => {
 
   it('calculates weekly P&L from snapshots', () => {
     const record = calculatePnlFromSnapshots('weekly');
-    expect(record.period).toBe('weekly');
-    expect(record.pnl).toBe(50000);
+    expect(record!.period).toBe('weekly');
+    expect(record!.pnl).toBe(50000);
     expect(getWeeklyPnlRecords({})).toHaveLength(1);
   });
 
-  it('creates weekly and monthly in-progress records', async () => {
+  it('creates weekly and monthly pending records', async () => {
     const weekly = await createWeeklyPnlRecord({
       startDate: '2026-03-09',
       startingCapital: 5050000,
     });
-    expect(weekly.status).toBe('in_progress');
-    expect(weekly.lastUniswapValue).toBe(100);
-    expect(weekly.lastMorphoValue).toBe(200);
-    expect(weekly.lastHlpValue).toBe(300);
+    expect(weekly!.status).toBe('pending');
+    expect(weekly!.lastUniswapValue).toBe(100);
+    expect(weekly!.lastMorphoValue).toBe(200);
+    expect(weekly!.lastHlpValue).toBe(300);
 
     const monthly = await createMonthlyPnlRecord({
       month: '2026-03',
       startingCapital: 5050000,
       auto: true,
     });
-    expect(monthly.status).toBe('in_progress');
+    expect(monthly!.status).toBe('pending');
   });
 
-  it('keeps monthly in progress after manual edit', () => {
-    const monthly = getMonthlyPnlRecords({}).find((record) => record.status === 'in_progress');
+  it('keeps monthly pending after manual edit', () => {
+    const monthly = getMonthlyPnlRecords({}).find((record) => record!.status === 'pending');
     expect(monthly).toBeTruthy();
     const updated = updatePnlRecordById(monthly!.id, { pnl: 1234, days: 10 });
-    expect(updated?.status).toBe('in_progress');
+    expect(updated?.status).toBe('pending');
     expect(updated?.autoAccumulate).toBe(true);
     expect(updated?.editable).toBe(true);
   });
 
-  it('updates in-progress weekly row once per day', async () => {
-    const weekly = getWeeklyPnlRecords({}).find((record) => record.status === 'in_progress');
+  it('updates pending weekly row once per day', async () => {
+    const weekly = getWeeklyPnlRecords({}).find((record) => record!.status === 'pending');
     expect(weekly).toBeTruthy();
 
     const run1 = await runDailyPnlAutoAccumulate('2026-03-10');
     expect(run1.updated).toBeGreaterThan(0);
 
-    const row1 = getWeeklyPnlRecords({}).find((record) => record.id === weekly!.id);
+    const row1 = getWeeklyPnlRecords({}).find((record) => record!.id === weekly!.id);
     expect(row1?.pnl).toBe(0);
 
     const run2 = await runDailyPnlAutoAccumulate('2026-03-10');
@@ -103,34 +111,29 @@ describe('pnl service', () => {
   });
 
   it('does not overwrite pnl when income fetch fails', async () => {
-    const weekly = getWeeklyPnlRecords({}).find((record) => record.status === 'in_progress');
+    const weekly = getWeeklyPnlRecords({}).find((record) => record!.status === 'pending');
     const pnlBefore = weekly?.pnl;
 
     mockGetPositionsSnapshot.mockRejectedValueOnce(new Error('network down'));
     const run = await runDailyPnlAutoAccumulate('2026-03-12');
     expect(run.updated).toBe(0);
 
-    const row = getWeeklyPnlRecords({}).find((record) => record.id === weekly?.id);
+    const row = getWeeklyPnlRecords({}).find((record) => record!.id === weekly?.id);
     expect(row?.pnl).toBe(pnlBefore);
   });
 
   it('creates and updates revenue overview', () => {
-    expect(getRevenueOverview()).toBeNull();
-
     updateRevenueOverview({
       periodLabel: '2026: 0101-0319',
       startDate: '2026-01-01',
+      endDate: '2026-03-19',
       initialInvestment: 5333035,
       fairValue: 5517228,
       cashValue: 5280692,
-      profit: 184193,
-      returnRate: 0.0345,
-      runningDays: 78,
-      annualizedReturn: 0.1616,
     });
 
     const overview = getRevenueOverview();
     expect(overview?.fairValue).toBe(5517228);
-    expect(overview?.profit).toBe(184193);
+    expect(overview?.profit).toBe(5517228 - 5333035);
   });
 });
