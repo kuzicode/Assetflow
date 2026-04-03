@@ -31,9 +31,9 @@ const navSections: NavSection[] = [
     label: '指标数据分析',
     items: [
       { to: '/analysis/ma', label: '币价分析', icon: 'timeline' },
-      { to: '/analysis/mvrv', label: 'MVRV 周期', icon: 'monitoring' },
+      { to: '/analysis/mvrv', label: 'MVRV', icon: 'monitoring' },
       { to: '/analysis/ahr999', label: 'AHR999', icon: 'show_chart' },
-      { to: '/analysis/btcdom', label: 'BTC 占比', icon: 'pie_chart' },
+      { to: '/analysis/btcdom', label: 'BTCDOM', icon: 'pie_chart' },
     ],
   },
 ];

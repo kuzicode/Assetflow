@@ -402,6 +402,23 @@ export default function Dashboard() {
                   {r ? r.runningDays : 0} <span className="text-sm font-normal text-outline">DAYS</span>
                 </p>
               </div>
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-on-surface-variant/70 uppercase">账面现金价值</p>
+                <p className="text-xl font-headline font-bold text-on-surface">
+                  {r ? r.cashValue.toLocaleString() : '0'}
+                </p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-on-surface-variant/70 uppercase">账面变动损益</p>
+                {r ? (() => {
+                  const delta = r.cashValue - r.fairValue;
+                  return (
+                    <p className={`text-xl font-headline font-bold ${pnlColor(delta)}`}>
+                      {`${delta >= 0 ? '+' : ''}${delta.toLocaleString()}`}
+                    </p>
+                  );
+                })() : <p className="text-xl font-headline font-bold text-on-surface-variant">0</p>}
+              </div>
             </div>
 
           </div>
