@@ -154,12 +154,13 @@ export async function buildPositionsSnapshot(): Promise<PositionsSnapshot> {
     };
 
     const evmWallets = wallets.filter((wallet) => !wallet.chains.includes('bitcoin') && !wallet.chains.includes('solana'));
-    await mapWithConcurrency(evmWallets, EXTERNAL_CONCURRENCY, async (wallet) => {
+    // OKX rate-limit: process wallets one at a time and serialize the two per-wallet calls
+    // to avoid hitting the per-second request cap (429).
+    for (const wallet of evmWallets) {
       try {
-        const [tokens, defiPositions] = await Promise.all([
-          fetchOKXTokenBalances(wallet.address, okxCreds),
-          fetchOKXDeFiPositions(wallet.address, okxCreds),
-        ]);
+        const tokens = await fetchOKXTokenBalances(wallet.address, okxCreds);
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        const defiPositions = await fetchOKXDeFiPositions(wallet.address, okxCreds);
 
         for (const token of tokens) {
           const group = getBaseTokenGroup(token.symbol);
@@ -251,7 +252,9 @@ export async function buildPositionsSnapshot(): Promise<PositionsSnapshot> {
         partialFailureSources.add(`okx:${wallet.label}`);
         console.error(`[OKX] Failed wallet ${wallet.label}:`, error.message);
       }
-    });
+      // 600ms gap between wallets to stay under OKX rate limit
+      await new Promise((resolve) => setTimeout(resolve, 600));
+    }
 
     if (!prices.ETH && prices.WETH) prices.ETH = prices.WETH;
     if (!prices.BTC && prices.WBTC) prices.BTC = prices.WBTC;
