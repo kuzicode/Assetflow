@@ -70,10 +70,12 @@ prefetchYields().catch((error: any) => {
   console.error('[Yields] startup prefetch failed:', error.message);
 });
 // Positions: warm cache on startup so first user visit is instant.
-// runAutoSnapshot skips when today's snapshot already exists, so we prefetch separately.
-getPositionsSnapshot().catch((error: any) => {
-  console.error('[Positions] startup prefetch failed:', error.message);
-});
+// Delayed 30s to avoid OKX rate-limit collision with PnL cron + snapshot catch-up.
+setTimeout(() => {
+  getPositionsSnapshot().catch((error: any) => {
+    console.error('[Positions] startup prefetch failed:', error.message);
+  });
+}, 30_000);
 getMvrv().catch((error: any) => { console.error('[Indicators] MVRV startup prefetch failed:', error.message); });
 getAhr999().catch((error: any) => { console.error('[Indicators] AHR999 startup prefetch failed:', error.message); });
 getBtcdom().catch((error: any) => { console.error('[Indicators] BTCDOM startup prefetch failed:', error.message); });

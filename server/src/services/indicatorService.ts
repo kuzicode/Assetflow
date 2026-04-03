@@ -315,10 +315,9 @@ let mvrvCache: { value: MvrvResult | null; expiresAt: number } = { value: null, 
 
 const BITCOIN_DATA_BASE = 'https://bitcoin-data.com/v1';
 
-interface BitcoinDataPoint {
-  t: string; // "YYYY-MM-DD"
-  v: number;
-}
+// bitcoin-data.com actual response shape: { d: "YYYY-MM-DD", unixTs: "...", mvrv: "1.23" }
+interface MvrvDataPoint  { d: string; mvrv: string; }
+interface PriceDataPoint { d: string; btcPrice: string; }
 
 function getMvrvStatus(mvrv: number): string {
   if (mvrv < 1.0) return '低估区';
@@ -345,16 +344,18 @@ export async function getMvrv(): Promise<MvrvResult> {
 
   try {
     const [mvrvRaw, priceRaw] = await Promise.all([
-      fetchBitcoinData<BitcoinDataPoint[]>('mvrv'),
-      fetchBitcoinData<BitcoinDataPoint[]>('btc-price'),
+      fetchBitcoinData<MvrvDataPoint[]>('mvrv'),
+      fetchBitcoinData<PriceDataPoint[]>('btc-price'),
     ]);
 
     const priceMap = new Map<string, number>();
-    for (const item of priceRaw) priceMap.set(item.t, item.v);
+    for (const item of priceRaw) {
+      if (item.d && item.btcPrice) priceMap.set(item.d, parseFloat(item.btcPrice));
+    }
 
     const history: MvrvHistoryItem[] = mvrvRaw
-      .filter((item) => priceMap.has(item.t))
-      .map((item) => ({ date: item.t, mvrv: item.v, price: priceMap.get(item.t)! }))
+      .filter((item) => item.d && item.mvrv && priceMap.has(item.d))
+      .map((item) => ({ date: item.d, mvrv: parseFloat(item.mvrv), price: priceMap.get(item.d)! }))
       .sort((a, b) => a.date.localeCompare(b.date));
 
     if (history.length === 0) throw new Error('MVRV history is empty after merge');
@@ -499,7 +500,8 @@ export interface BtcdomResult {
 
 let btcdomCache: IndicatorCache<BtcdomResult> = { value: null, expiresAt: 0 };
 
-const COINGECKO_BASE = 'https://pro-api.coingecko.com/api/v3';
+// CG-... keys are Demo keys — use public API base with x-cg-demo-api-key header
+const COINGECKO_BASE = 'https://api.coingecko.com/api/v3';
 
 function getBtcdomStatus(dominance: number): string {
   if (dominance > 60) return 'BTC主导';
@@ -512,7 +514,7 @@ async function fetchCoinGecko<T>(path: string): Promise<T> {
   const resp = await fetch(`${COINGECKO_BASE}${path}`, {
     headers: {
       'Accept': 'application/json',
-      'x-cg-pro-api-key': apiKey,
+      'x-cg-demo-api-key': apiKey,
     },
   });
   if (!resp.ok) throw new Error(`CoinGecko ${path} HTTP ${resp.status}`);
