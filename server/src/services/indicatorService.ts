@@ -503,6 +503,12 @@ let btcdomCache: IndicatorCache<BtcdomResult> = { value: null, expiresAt: 0 };
 // CG-... keys are Demo keys — use public API base with x-cg-demo-api-key header
 const COINGECKO_BASE = 'https://api.coingecko.com/api/v3';
 
+// Top coins used to approximate total market cap (Demo API: days=365 ✓, global/market_cap_chart ✗)
+const TOP_COINS_FOR_BTCDOM = [
+  'bitcoin', 'ethereum', 'tether', 'binancecoin',
+  'solana', 'ripple', 'usd-coin', 'dogecoin',
+];
+
 function getBtcdomStatus(dominance: number): string {
   if (dominance > 60) return 'BTC主导';
   if (dominance >= 40) return '均衡';
@@ -525,52 +531,52 @@ export async function getBtcdom(): Promise<BtcdomResult> {
   if (btcdomCache.value && btcdomCache.expiresAt > Date.now()) return btcdomCache.value;
 
   try {
-    const [globalData, btcChart, globalChart] = await Promise.all([
+    // Fetch current global dominance + 365-day market charts for top 8 coins in parallel
+    // (Demo API: days=365 returns daily granularity without interval param; global/market_cap_chart is Pro-only)
+    type CoinChart = { market_caps: [number, number][]; prices: [number, number][] };
+    const [globalData, ...coinCharts] = await Promise.all([
       fetchCoinGecko<{ data: { market_cap_percentage: { btc: number } } }>('/global'),
-      fetchCoinGecko<{ market_caps: [number, number][]; prices: [number, number][] }>(
-        '/coins/bitcoin/market_chart?vs_currency=usd&days=1095&interval=daily',
+      ...TOP_COINS_FOR_BTCDOM.map((coin) =>
+        fetchCoinGecko<CoinChart>(`/coins/${coin}/market_chart?vs_currency=usd&days=365`),
       ),
-      fetchCoinGecko<{ market_cap: [number, number][] }>(
-        '/global/market_cap_chart?days=1095&vs_currency=usd',
-      ),
-    ]);
+    ]) as [{ data: { market_cap_percentage: { btc: number } } }, ...CoinChart[]];
 
-    // Build BTC mcap and price by date
+    // Accumulate per-date market caps across all coins
+    const mcapSumByDate = new Map<string, number>();
     const btcMcapByDate = new Map<string, number>();
-    const btcPriceByDate = new Map<string, number>();
 
-    for (const [ts, mcap] of btcChart.market_caps) {
-      const date = new Date(ts).toISOString().slice(0, 10);
-      btcMcapByDate.set(date, mcap);
-    }
-    for (const [ts, price] of btcChart.prices) {
-      const date = new Date(ts).toISOString().slice(0, 10);
-      btcPriceByDate.set(date, price);
+    for (let i = 0; i < coinCharts.length; i += 1) {
+      for (const [ts, mcap] of coinCharts[i].market_caps) {
+        const date = new Date(ts).toISOString().slice(0, 10);
+        mcapSumByDate.set(date, (mcapSumByDate.get(date) ?? 0) + mcap);
+        if (i === 0) btcMcapByDate.set(date, mcap); // bitcoin is first
+      }
     }
 
-    // Build total mcap by date
-    const totalMcapByDate = new Map<string, number>();
-    for (const [ts, totalMcap] of globalChart.market_cap) {
-      const date = new Date(ts).toISOString().slice(0, 10);
-      totalMcapByDate.set(date, totalMcap);
-    }
-
-    // Align by date
-    const history: BtcdomHistoryItem[] = [];
+    // Compute raw BTC dominance relative to top-8 sum
+    const rawHistory: Array<{ date: string; rawDom: number }> = [];
     for (const [date, btcMcap] of btcMcapByDate) {
-      const totalMcap = totalMcapByDate.get(date);
-      if (totalMcap == null || totalMcap === 0) continue;
-      const dominance = round((btcMcap / totalMcap) * 100, 2);
-      history.push({ date, dominance });
+      const totalMcap = mcapSumByDate.get(date) ?? 0;
+      if (totalMcap > 0) {
+        rawHistory.push({ date, rawDom: (btcMcap / totalMcap) * 100 });
+      }
     }
-    history.sort((a, b) => a.date.localeCompare(b.date));
+    rawHistory.sort((a, b) => a.date.localeCompare(b.date));
 
-    if (history.length === 0) throw new Error('BTCDOM history is empty after merge');
+    if (rawHistory.length === 0) throw new Error('BTCDOM history is empty after merge');
 
-    const currentDominance = round(globalData.data.market_cap_percentage.btc, 2);
+    // Calibrate: scale raw series so latest value matches actual dominance from /global
+    const actualDominance = globalData.data.market_cap_percentage.btc;
+    const rawDomLatest = rawHistory[rawHistory.length - 1].rawDom;
+    const scale = rawDomLatest > 0 ? actualDominance / rawDomLatest : 1;
 
-    // Get current price from last btcChart prices entry
-    const lastPriceEntry = btcChart.prices[btcChart.prices.length - 1];
+    const history: BtcdomHistoryItem[] = rawHistory.map(({ date, rawDom }) => ({
+      date,
+      dominance: round(rawDom * scale, 2),
+    }));
+
+    const currentDominance = round(actualDominance, 2);
+    const lastPriceEntry = coinCharts[0].prices[coinCharts[0].prices.length - 1];
     const currentPrice = lastPriceEntry ? round(lastPriceEntry[1], 0) : 0;
 
     const result: BtcdomResult = {
