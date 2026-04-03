@@ -6,18 +6,16 @@ import path from 'path';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
-// Override global fetch with undici's fetch so proxy env vars are respected.
-// Node.js built-in fetch uses its own internal undici bundle and ignores setGlobalDispatcher
-// from the npm undici package. Replacing globalThis.fetch with undici's fetch fixes this.
+// When a local proxy is configured (e.g. dev machine behind Clash/V2Ray),
+// Node.js built-in fetch ignores http_proxy env vars. Fix: replace globalThis.fetch
+// with undici's fetch + ProxyAgent so the proxy is respected.
+// Only activated when a proxy URL is present — production servers skip this entirely.
 const proxyUrl = process.env.https_proxy || process.env.HTTPS_PROXY || process.env.http_proxy || process.env.HTTP_PROXY;
-{
+if (proxyUrl) {
   const { ProxyAgent, setGlobalDispatcher, fetch: undiciFetch } = await import('undici');
-  if (proxyUrl) {
-    setGlobalDispatcher(new ProxyAgent(proxyUrl));
-    console.log(`[Proxy] Global dispatcher set to ${proxyUrl}`);
-  }
-  // Always use undici's fetch so the dispatcher is respected
+  setGlobalDispatcher(new ProxyAgent(proxyUrl));
   (globalThis as any).fetch = undiciFetch;
+  console.log(`[Proxy] Global dispatcher set to ${proxyUrl}`);
 }
 
 import './db/index.js';
