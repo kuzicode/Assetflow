@@ -554,12 +554,15 @@ export async function getBtcdom(): Promise<BtcdomResult> {
     }
 
     // Compute raw BTC dominance relative to top-8 sum
+    // Only include dates where totalMcap >> btcMcap (i.e., all 8 coins have data for that date)
+    // and dominance would be plausible (<= 80%). Missing coins on early dates can inflate the ratio.
     const rawHistory: Array<{ date: string; rawDom: number }> = [];
     for (const [date, btcMcap] of btcMcapByDate) {
       const totalMcap = mcapSumByDate.get(date) ?? 0;
-      if (totalMcap > 0) {
-        rawHistory.push({ date, rawDom: (btcMcap / totalMcap) * 100 });
-      }
+      if (totalMcap <= 0) continue;
+      const rawDom = (btcMcap / totalMcap) * 100;
+      // Filter out dates where sum is implausibly low (some coins missing) — raw dom should be < 90%
+      if (rawDom < 90) rawHistory.push({ date, rawDom });
     }
     rawHistory.sort((a, b) => a.date.localeCompare(b.date));
 
