@@ -541,28 +541,35 @@ export async function getBtcdom(): Promise<BtcdomResult> {
       ),
     ]) as [{ data: { market_cap_percentage: { btc: number } } }, ...CoinChart[]];
 
-    // Accumulate per-date market caps across all coins
-    const mcapSumByDate = new Map<string, number>();
-    const btcMcapByDate = new Map<string, number>();
+    // Collect latest market cap per coin per date
+    // CoinGecko returns 2 entries on the current day (midnight UTC + current timestamp).
+    // Using a nested map ensures we take only one value per coin per date (the last/latest).
+    const mcapByDateByCoin = new Map<string, Map<number, number>>();
 
     for (let i = 0; i < coinCharts.length; i += 1) {
       for (const [ts, mcap] of coinCharts[i].market_caps) {
         const date = new Date(ts).toISOString().slice(0, 10);
-        mcapSumByDate.set(date, (mcapSumByDate.get(date) ?? 0) + mcap);
-        if (i === 0) btcMcapByDate.set(date, mcap); // bitcoin is first
+        if (!mcapByDateByCoin.has(date)) mcapByDateByCoin.set(date, new Map());
+        mcapByDateByCoin.get(date)!.set(i, mcap); // overwrite = keep latest entry for this coin+date
       }
     }
 
+    // Sum all coins' market caps per date (one value per coin per date now)
+    const mcapSumByDate = new Map<string, number>();
+    const btcMcapByDate = new Map<string, number>();
+    for (const [date, coinMap] of mcapByDateByCoin) {
+      let sum = 0;
+      for (const mcap of coinMap.values()) sum += mcap;
+      mcapSumByDate.set(date, sum);
+      const btcMcap = coinMap.get(0); // bitcoin is index 0
+      if (btcMcap !== undefined) btcMcapByDate.set(date, btcMcap);
+    }
+
     // Compute raw BTC dominance relative to top-8 sum
-    // Only include dates where totalMcap >> btcMcap (i.e., all 8 coins have data for that date)
-    // and dominance would be plausible (<= 80%). Missing coins on early dates can inflate the ratio.
     const rawHistory: Array<{ date: string; rawDom: number }> = [];
     for (const [date, btcMcap] of btcMcapByDate) {
       const totalMcap = mcapSumByDate.get(date) ?? 0;
-      if (totalMcap <= 0) continue;
-      const rawDom = (btcMcap / totalMcap) * 100;
-      // Filter out dates where sum is implausibly low (some coins missing) — raw dom should be < 90%
-      if (rawDom < 90) rawHistory.push({ date, rawDom });
+      if (totalMcap > 0) rawHistory.push({ date, rawDom: (btcMcap / totalMcap) * 100 });
     }
     rawHistory.sort((a, b) => a.date.localeCompare(b.date));
 
