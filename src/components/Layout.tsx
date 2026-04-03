@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useCallback } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useStore } from '../store/useStore';
 import { apiFetch } from '../lib/api';
@@ -40,11 +40,17 @@ const navSections: NavSection[] = [
 
 export default function Layout() {
   const navigate = useNavigate();
-  const { revenueOverview, authMode, initializeApp, setAuthState, spotPrices } = useStore();
+  const { revenueOverview, authMode, initializeApp, setAuthState, spotPrices, athData, spotPricesUpdatedAt, fetchSpotPrices } = useStore();
 
   useEffect(() => {
     initializeApp();
   }, []);
+
+  const stableFetchSpotPrices = useCallback(fetchSpotPrices, []);
+  useEffect(() => {
+    const id = setInterval(stableFetchSpotPrices, 5 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [stableFetchSpotPrices]);
 
   const handleLogout = async () => {
     try {
@@ -133,28 +139,47 @@ export default function Layout() {
       </aside>
 
       {/* Top Nav */}
-      <header className="fixed top-0 right-0 z-40 flex w-[calc(100%-13rem)] items-center justify-between bg-surface/80 px-12 py-4 backdrop-blur-xl shadow-[0px_12px_32px_rgba(25,28,29,0.04)]">
-        <div className="flex items-center gap-4">
-          <span className="text-xs font-bold text-outline uppercase tracking-widest">币价行情：</span>
-          {(['BTC', 'ETH', 'SOL', 'BNB'] as const).map((sym, i) => (
-            <div key={sym} className="flex items-center gap-3">
-              {i > 0 && <span className="text-outline-variant/40 text-xs select-none">|</span>}
-              <div className="flex items-center gap-1.5">
-                <span
-                  className="w-[18px] h-[18px] rounded-full flex items-center justify-center text-white font-bold leading-none shrink-0"
-                  style={{ backgroundColor: COIN_COLORS[sym], fontSize: '9px' }}
-                >
-                  {COIN_LABELS[sym]}
-                </span>
-                <span className="text-xs font-bold text-on-surface">{sym}</span>
-                <span className="text-xs font-mono-data text-on-surface-variant">
-                  {spotPrices[sym]
-                    ? `$${spotPrices[sym].toLocaleString(undefined, { maximumFractionDigits: sym === 'BTC' ? 0 : 2 })}`
-                    : '—'}
-                </span>
+      <header className="fixed top-0 right-0 z-40 flex w-[calc(100%-13rem)] items-center justify-between bg-surface/80 px-12 py-3 backdrop-blur-xl shadow-[0px_12px_32px_rgba(25,28,29,0.04)]">
+        <div className="flex items-center gap-5">
+          <span className="text-[10px] font-bold text-outline uppercase tracking-widest">行情</span>
+          {(['BTC', 'ETH', 'SOL', 'BNB'] as const).map((sym, i) => {
+            const price = spotPrices[sym];
+            const ath = athData[sym]?.ath;
+            const drawdown = price && ath ? ((1 - price / ath) * 100) : null;
+            const athFull = ath
+              ? `$${ath.toLocaleString(undefined, { maximumFractionDigits: ath >= 1000 ? 0 : 2 })}`
+              : null;
+            return (
+              <div key={sym} className="flex items-center gap-4">
+                {i > 0 && <span className="text-outline-variant/30 text-xs select-none">|</span>}
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className="w-[16px] h-[16px] rounded-full flex items-center justify-center text-white font-bold leading-none shrink-0"
+                    style={{ backgroundColor: COIN_COLORS[sym], fontSize: '8px' }}
+                  >
+                    {COIN_LABELS[sym]}
+                  </span>
+                  <span className="text-xs font-bold text-on-surface">{sym}</span>
+                  <span className="text-xs font-mono-data text-on-surface">
+                    {price
+                      ? `$${price.toLocaleString(undefined, { maximumFractionDigits: sym === 'BTC' ? 0 : 2 })}`
+                      : '—'}
+                  </span>
+                  {athFull && drawdown !== null && (
+                    <span className="text-[10px] font-mono-data text-outline">
+                      (ATH {athFull} <span className="text-error">-{drawdown.toFixed(1)}%</span>)
+                    </span>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
+          {spotPricesUpdatedAt && (
+            <span className="flex items-center gap-1.5 text-xs text-outline/50 ml-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse shrink-0" />
+              更新 {new Date(spotPricesUpdatedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-6">
           {revenueOverview && (

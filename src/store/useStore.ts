@@ -18,6 +18,8 @@ interface AppState {
   settings: AppSettings | null;
   prices: Record<string, number>;
   spotPrices: Record<string, number>;
+  athData: Record<string, { ath: number; athDate: string }>;
+  spotPricesUpdatedAt: string | null;
   yields: YieldsData | null;
   positionsUpdatedAt: string | null;
   positionsIsStale: boolean;
@@ -113,6 +115,8 @@ export const useStore = create<AppState>((set, get) => ({
   settings: null,
   prices: {},
   spotPrices: {},
+  athData: {},
+  spotPricesUpdatedAt: null,
   yields: null,
   positionsUpdatedAt: null,
   positionsIsStale: false,
@@ -306,6 +310,8 @@ export const useStore = create<AppState>((set, get) => ({
       const data: PriceSnapshot = await apiFetch('/api/prices?symbols=BTC,ETH,SOL,BNB');
       set({
         spotPrices: data.prices,
+        athData: data.ath ?? {},
+        spotPricesUpdatedAt: data.timestamp,
         spotPriceFailureSources: data.partialFailureSources,
       });
     } catch (error: any) {

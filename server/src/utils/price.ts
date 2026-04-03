@@ -2,9 +2,56 @@ import { STABLECOIN_SYMBOLS } from '../config/chains.js';
 
 export interface PriceSnapshot {
   prices: Record<string, number>;
+  ath: Record<string, { ath: number; athDate: string }>;
   missingSymbols: string[];
   partialFailureSources: string[];
   timestamp: string;
+}
+
+// --- ATH via CoinGecko ---
+
+const COINGECKO_BASE = 'https://api.coingecko.com/api/v3';
+const COINGECKO_ID_MAP: Record<string, string> = {
+  BTC: 'bitcoin',
+  ETH: 'ethereum',
+  SOL: 'solana',
+  BNB: 'binancecoin',
+};
+
+interface AthEntry { ath: number; athDate: string }
+
+const athCache: { data: Record<string, AthEntry> | null; expiresAt: number; stale: Record<string, AthEntry> | null } = {
+  data: null, expiresAt: 0, stale: null,
+};
+
+export async function fetchAthData(symbols: string[]): Promise<Record<string, AthEntry>> {
+  if (athCache.data && athCache.expiresAt > Date.now()) return athCache.data;
+
+  const ids = symbols.map((s) => COINGECKO_ID_MAP[s]).filter(Boolean).join(',');
+  if (!ids) return {};
+
+  try {
+    const apiKey = process.env.COINGECKO_API_KEY ?? '';
+    const resp = await fetch(
+      `${COINGECKO_BASE}/coins/markets?vs_currency=usd&ids=${ids}&per_page=10`,
+      { headers: { 'Accept': 'application/json', 'x-cg-demo-api-key': apiKey }, signal: AbortSignal.timeout(10000) },
+    );
+    if (!resp.ok) throw new Error(`CoinGecko markets HTTP ${resp.status}`);
+    const list = await resp.json() as Array<{ id: string; ath: number; ath_date: string }>;
+
+    const result: Record<string, AthEntry> = {};
+    for (const item of list) {
+      const sym = Object.entries(COINGECKO_ID_MAP).find(([, id]) => id === item.id)?.[0];
+      if (sym) result[sym] = { ath: item.ath, athDate: item.ath_date };
+    }
+    athCache.data = result;
+    athCache.stale = result;
+    athCache.expiresAt = Date.now() + 24 * 60 * 60 * 1000;
+    return result;
+  } catch (e: any) {
+    console.error('[Price] ATH fetch failed:', e.message);
+    return athCache.stale ?? {};
+  }
 }
 
 // Symbol normalization for Binance ticker lookup
@@ -97,6 +144,7 @@ export async function fetchPrices(symbols: string[]): Promise<PriceSnapshot> {
 
   return {
     prices,
+    ath: {},
     missingSymbols: [...missingSymbols],
     partialFailureSources: [...partialFailureSources],
     timestamp: new Date().toISOString(),

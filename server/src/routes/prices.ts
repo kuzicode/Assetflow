@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { fetchPrices } from '../utils/price.js';
+import { fetchPrices, fetchAthData } from '../utils/price.js';
 
 const router = Router();
 
@@ -11,8 +11,8 @@ router.get('/', async (req, res) => {
       return res.status(400).json({ error: 'Missing symbols parameter' });
     }
 
-    const snapshot = await fetchPrices(symbols);
-    res.json(snapshot);
+    const [snapshot, ath] = await Promise.all([fetchPrices(symbols), fetchAthData(symbols)]);
+    res.json({ ...snapshot, ath });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

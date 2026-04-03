@@ -109,6 +109,7 @@ export interface YieldsData {
 
 export interface PriceSnapshot {
   prices: Record<string, number>;
+  ath: Record<string, { ath: number; athDate: string }>;
   missingSymbols: string[];
   partialFailureSources: string[];
   timestamp: string;
