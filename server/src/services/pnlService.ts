@@ -6,6 +6,7 @@ import {
   deleteRecord,
   getLatestNonInProgressWeekly,
   getLatestPnlRecord,
+  getPnlDataDir,
   getPnlRecordById,
   insertRecord,
   listInProgressPnlRecords,
@@ -18,7 +19,12 @@ import { getPositionsSnapshot } from './positionsService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const REVENUE_JSON_PATH = path.join(__dirname, '../../data/revenue_overview.json');
+const DATA_DIR = path.join(__dirname, '../../data');
+const REVENUE_JSON_PATH = path.join(DATA_DIR, 'revenue_overview.json');
+
+function getIncomeBaselinesPath(): string {
+  return path.join(getPnlDataDir(), 'income_baselines.json');
+}
 
 function readRevenueJson(): any | null {
   try {
@@ -30,6 +36,49 @@ function readRevenueJson(): any | null {
 
 function writeRevenueJson(data: any): void {
   fs.writeFileSync(REVENUE_JSON_PATH, JSON.stringify(data, null, 2), 'utf-8');
+}
+
+function readIncomeBaselines(): any | null {
+  try {
+    return JSON.parse(fs.readFileSync(getIncomeBaselinesPath(), 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+function writeIncomeBaselines(data: any): void {
+  const p = getIncomeBaselinesPath();
+  const tmp = p + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf-8');
+  fs.renameSync(tmp, p);
+}
+
+function upsertIncomeDailySnapshot(
+  date: string,
+  values: { uniswap: number; morpho: number; hlp: number },
+  base: { uniswap: number; morpho: number; hlp: number }
+) {
+  const bl = readIncomeBaselines();
+  if (!bl) return;
+  const pnlUniswap = Math.max(0, values.uniswap - base.uniswap);
+  const pnlMorpho = Math.max(0, values.morpho - base.morpho);
+  const pnlHlp = Math.max(0, values.hlp - base.hlp);
+  const entry = {
+    date,
+    uniswap: values.uniswap,
+    morpho: values.morpho,
+    hlp: values.hlp,
+    pnlUniswap,
+    pnlMorpho,
+    pnlHlp,
+    pnlTotal: pnlUniswap + pnlMorpho + pnlHlp,
+  };
+  const daily: any[] = bl.dailyUpdates || [];
+  const idx = daily.findIndex((d: any) => d.date === date);
+  if (idx >= 0) daily[idx] = entry;
+  else daily.push(entry);
+  bl.dailyUpdates = daily;
+  writeIncomeBaselines(bl);
 }
 
 export function getTodayUtcDate() {
@@ -214,6 +263,20 @@ export async function createWeeklyPnlRecord(input: {
   };
 
   insertRecord(record);
+
+  // Update income_baselines.json with new week's base
+  if (!creatingHistoricalDone) {
+    const newBase = {
+      weeklyId: id,
+      weekStart: input.startDate,
+      uniswap: income.uniswap,
+      morpho: income.morpho,
+      hlp: income.hlp,
+      recordedAt: today,
+    };
+    writeIncomeBaselines({ currentWeeklyId: id, base: newBase, dailyUpdates: [] });
+  }
+
   syncMonthlyPendingFromWeekly(finalEndDate);
   return formatPnlRecord(getPnlRecordById(id));
 }
@@ -452,7 +515,15 @@ export async function runDailyPnlAutoAccumulate(today = getTodayUtcDate()) {
     updated += 1;
   }
 
-  if (updated > 0) syncMonthlyPendingFromWeekly(today);
+  if (updated > 0) {
+    syncMonthlyPendingFromWeekly(today);
+    // Write daily snapshot to income_baselines.json
+    const bl = readIncomeBaselines();
+    if (bl) {
+      const base = { uniswap: bl.base?.uniswap ?? 0, morpho: bl.base?.morpho ?? 0, hlp: bl.base?.hlp ?? 0 };
+      upsertIncomeDailySnapshot(today, { uniswap: income.uniswap, morpho: income.morpho, hlp: income.hlp }, base);
+    }
+  }
   return { updated };
 }
 

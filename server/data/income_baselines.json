@@ -1,0 +1,23 @@
+{
+  "currentWeeklyId": "ab7661ff-e994-4b1d-9191-efef6538a534",
+  "base": {
+    "weeklyId": "ab7661ff-e994-4b1d-9191-efef6538a534",
+    "weekStart": "2026-04-01",
+    "uniswap": 0,
+    "morpho": 1744004,
+    "hlp": 1609815,
+    "recordedAt": "2026-04-01"
+  },
+  "dailyUpdates": [
+    {
+      "date": "2026-04-04",
+      "uniswap": 0,
+      "morpho": 1744826.9334871457,
+      "hlp": 1607339.188333,
+      "pnlUniswap": 0,
+      "pnlMorpho": 822.9334871457,
+      "pnlHlp": 0,
+      "pnlTotal": 822.9334871457
+    }
+  ]
+}

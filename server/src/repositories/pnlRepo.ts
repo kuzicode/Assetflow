@@ -12,6 +12,10 @@ export function setPnlDataDir(dir: string) {
   PNL_DATA_DIR = dir;
 }
 
+export function getPnlDataDir(): string {
+  return PNL_DATA_DIR;
+}
+
 export type PnlStatus = 'pending' | 'done';
 
 export interface PnlRecord {
