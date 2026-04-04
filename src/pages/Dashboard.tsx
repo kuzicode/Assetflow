@@ -201,7 +201,7 @@ export default function Dashboard() {
   const latestSettledWeek = weeklyPnl.find((w) => w.status !== 'pending');
   const hasInProgress = weeklyPnl.some((w) => w.status === 'pending');
   const runningEndDate = latestSettledWeek ? latestSettledWeek.endDate : new Date().toISOString();
-  const runningTime = r ? `${r.periodLabel}:${fmtMMDD(r.startDate)}-${fmtMMDD(runningEndDate)}` : '未设置';
+  const runningTime = r ? `${r.periodLabel}: ${fmtMMDD(r.startDate)}-${fmtMMDD(runningEndDate)}` : '未设置';
   const runningTimePending = r && hasInProgress;
   const isInProgress = (rec: any) => rec.status === 'pending';
   const rowClass = (rec: any) => isInProgress(rec) ? 'text-yellow-600' : '';
