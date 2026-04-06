@@ -1,12 +1,15 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createTestDb } from '../test/setup.js';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createTestDataDir } from '../test/setup.js';
+import { setWalletsDataDir } from '../repositories/walletsRepo.js';
 
-const testDb = createTestDb();
-vi.mock('../db/index.js', () => ({ default: testDb }));
+const { dir, cleanup } = createTestDataDir();
+setWalletsDataDir(dir);
 
+const { deleteWallet, insertWallet, listWalletRows, updateWalletLabel } = await import('../repositories/walletsRepo.js');
 const { createAdminSession, clearAdminSession } = await import('../auth/session.js');
 const { requireAdmin } = await import('../middleware/requireAdmin.js');
-const { deleteWallet, insertWallet, listWalletRows, updateWalletLabel } = await import('../repositories/walletsRepo.js');
+
+afterAll(() => cleanup());
 
 function createMockRes() {
   return {

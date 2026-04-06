@@ -15,7 +15,6 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
-    "better-sqlite3": "^12.8.0",
     "ccxt": "^4.5.45",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
@@ -26,7 +25,6 @@
     "uuid": "^13.0.0"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^25.5.0",

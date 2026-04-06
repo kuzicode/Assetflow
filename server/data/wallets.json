@@ -1,0 +1,16 @@
+{
+  "records": [
+    {
+      "id": "3e227ccd-61d6-4141-b760-633640fffc54",
+      "label": "W1 黑Onekey",
+      "address": "0xf0777e27c50eaa9a6cb2255b0aa3ee21e35aad84",
+      "chains": ["ethereum"]
+    },
+    {
+      "id": "9f1c4511-2063-4917-b4d1-f233efe72fdb",
+      "label": "W2 白Onekey",
+      "address": "0x7C6Ef14F6890D0fdA17fB8E4Fb6F649F0355c3BE",
+      "chains": ["ethereum"]
+    }
+  ]
+}

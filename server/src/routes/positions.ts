@@ -44,11 +44,11 @@ router.get('/manual', (_req, res) => {
   res.json(assets.map((asset) => ({
     id: asset.id,
     label: asset.label,
-    baseToken: asset.base_token,
+    baseToken: asset.baseToken,
     amount: asset.amount,
     source: asset.source,
     platform: asset.platform || '',
-    updatedAt: asset.updated_at,
+    updatedAt: asset.updatedAt,
   })));
 });
 
@@ -91,8 +91,8 @@ router.post('/manual', requireAdmin, (req, res) => {
 
 router.delete('/manual/:id', requireAdmin, (req, res) => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const result = deleteManualAsset(id);
-  if (result.changes === 0) {
+  const deleted = deleteManualAsset(id);
+  if (!deleted) {
     return res.status(404).json({ error: 'Asset not found' });
   }
   invalidatePositionsSnapshotCache();

@@ -1,9 +1,7 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { v4 as uuidv4 } from 'uuid';
-import { createTestDb, createTestPnlDir } from '../test/setup.js';
+import { afterAll, describe, expect, it, vi } from 'vitest';
+import { createTestDataDir } from '../test/setup.js';
 
-const testDb = createTestDb();
-const { dir: testPnlDir, cleanup: cleanupPnlDir } = createTestPnlDir();
+const { dir: testDataDir, cleanup: cleanupDataDir } = createTestDataDir();
 
 const { mockGetPositionsSnapshot } = vi.hoisted(() => ({
   mockGetPositionsSnapshot: vi.fn(async () => ({
@@ -17,14 +15,12 @@ const { mockGetPositionsSnapshot } = vi.hoisted(() => ({
   })),
 }));
 
-vi.mock('../db/index.js', () => ({ default: testDb }));
 vi.mock('../services/positionsService.js', () => ({
   getPositionsSnapshot: mockGetPositionsSnapshot,
 }));
 
 const { setPnlDataDir } = await import('../repositories/pnlRepo.js');
 const {
-  calculatePnlFromSnapshots,
   createMonthlyPnlRecord,
   createWeeklyPnlRecord,
   getMonthlyPnlRecords,
@@ -35,38 +31,14 @@ const {
   updateRevenueOverview,
 } = await import('../services/pnlService.js');
 
-setPnlDataDir(testPnlDir);
+setPnlDataDir(testDataDir);
+
+afterAll(() => cleanupDataDir());
 
 describe('pnl service', () => {
-  beforeAll(() => {
-    const snap1Id = uuidv4();
-    const snap2Id = uuidv4();
-
-    testDb.prepare(`
-      INSERT INTO snapshots (id, timestamp, type, total_fair_value, total_cash_value, positions_json, prices_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(snap1Id, '2026-03-01T00:00:00Z', 'auto', 5000000, 4900000, '[]', '{}');
-
-    testDb.prepare(`
-      INSERT INTO snapshots (id, timestamp, type, total_fair_value, total_cash_value, positions_json, prices_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(snap2Id, '2026-03-08T00:00:00Z', 'auto', 5050000, 4950000, '[]', '{}');
-  });
-
-  afterAll(() => {
-    cleanupPnlDir();
-  });
-
   it('returns empty arrays initially', () => {
     expect(getWeeklyPnlRecords({})).toEqual([]);
     expect(getMonthlyPnlRecords({})).toEqual([]);
-  });
-
-  it('calculates weekly P&L from snapshots', () => {
-    const record = calculatePnlFromSnapshots('weekly');
-    expect(record!.period).toBe('weekly');
-    expect(record!.pnl).toBe(50000);
-    expect(getWeeklyPnlRecords({})).toHaveLength(1);
   });
 
   it('creates weekly and monthly pending records', async () => {
@@ -124,7 +96,7 @@ describe('pnl service', () => {
 
   it('creates and updates revenue overview', () => {
     updateRevenueOverview({
-      periodLabel: '2026: 0101-0319',
+      periodLabel: '2026',
       startDate: '2026-01-01',
       endDate: '2026-03-19',
       initialInvestment: 5333035,

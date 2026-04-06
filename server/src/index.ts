@@ -18,11 +18,9 @@ if (proxyUrl) {
   console.log(`[Proxy] Global dispatcher set to ${proxyUrl}`);
 }
 
-import './db/index.js';
 import app from './app.js';
 import cron from 'node-cron';
 import { runDailyPnlAutoAccumulate } from './routes/pnl.js';
-import { runAutoSnapshot } from './routes/snapshots.js';
 import { prefetchYields } from './routes/yields.js';
 import { getPositionsSnapshot } from './services/positionsService.js';
 import { getMvrv, getAhr999, getBtcdom } from './services/indicatorService.js';
@@ -43,18 +41,8 @@ cron.schedule('0 0 * * *', async () => {
   }
 }, { timezone: 'UTC' });
 
-// Daily jobs: UTC+8 08:00 — snapshot + yields prefetch
+// Daily jobs: UTC+8 08:00 — yields prefetch
 cron.schedule('0 8 * * *', async () => {
-  try {
-    const result = await runAutoSnapshot();
-    if (result.skipped) {
-      console.log(`[Snapshot] ${result.date} already exists, skipped`);
-    } else {
-      console.log(`[Snapshot] ${result.date} saved, totalUsd=${Math.round(result.totalUsd!)}`);
-    }
-  } catch (error: any) {
-    console.error('[Snapshot] auto-snapshot failed:', error.message);
-  }
   try {
     await prefetchYields();
     console.log('[Yields] daily prefetch completed');
@@ -74,9 +62,6 @@ cron.schedule('0 8 * * *', async () => {
 // Startup catch-up
 runDailyPnlAutoAccumulate().catch((error: any) => {
   console.error('[PnLCron] startup update failed:', error.message);
-});
-runAutoSnapshot().catch((error: any) => {
-  console.error('[Snapshot] startup snapshot failed:', error.message);
 });
 prefetchYields().catch((error: any) => {
   console.error('[Yields] startup prefetch failed:', error.message);

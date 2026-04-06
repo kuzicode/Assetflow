@@ -79,7 +79,7 @@ function getWallets(): Wallet[] {
     id: wallet.id,
     label: wallet.label,
     address: wallet.address,
-    chains: JSON.parse(wallet.chains_json),
+    chains: wallet.chains,
   }));
 }
 
@@ -379,7 +379,7 @@ export async function buildPositionsSnapshot(): Promise<PositionsSnapshot> {
   }
 
   for (const asset of listManualAssetRows()) {
-    const group = asset.base_token;
+    const group = asset.baseToken;
     if (!groupMap[group]) groupMap[group] = [];
     groupMap[group].push({
       id: asset.id,

@@ -8,11 +8,7 @@ const router = Router();
 
 // GET /api/wallets
 router.get('/', (_req, res) => {
-  const wallets = listWalletRows();
-  res.json(wallets.map((w) => ({
-    ...w,
-    chains: JSON.parse(w.chains_json),
-  })));
+  res.json(listWalletRows());
 });
 
 // POST /api/wallets
@@ -32,8 +28,8 @@ router.patch('/:id', requireAdmin, (req, res) => {
   const { label } = req.body;
   if (typeof label !== 'string' || !label.trim()) return res.status(400).json({ error: 'Missing label' });
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const result = updateWalletLabel(id, label.trim());
-  if (result.changes === 0) return res.status(404).json({ error: 'Wallet not found' });
+  const updated = updateWalletLabel(id, label.trim());
+  if (!updated) return res.status(404).json({ error: 'Wallet not found' });
   invalidatePositionsSnapshotCache();
   res.json({ success: true });
 });
@@ -41,10 +37,8 @@ router.patch('/:id', requireAdmin, (req, res) => {
 // DELETE /api/wallets/:id
 router.delete('/:id', requireAdmin, (req, res) => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const result = deleteWallet(id);
-  if (result.changes === 0) {
-    return res.status(404).json({ error: 'Wallet not found' });
-  }
+  const deleted = deleteWallet(id);
+  if (!deleted) return res.status(404).json({ error: 'Wallet not found' });
   invalidatePositionsSnapshotCache();
   res.json({ success: true });
 });

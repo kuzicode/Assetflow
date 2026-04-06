@@ -1,28 +1,58 @@
-import db from '../db/index.js';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-export function getSettingsMap() {
-  const rows: Array<{ key: string; value: string }> = db.prepare('SELECT * FROM settings').all() as Array<{ key: string; value: string }>;
-  return rows.reduce<Record<string, string>>((acc, row) => {
-    acc[row.key] = row.value;
-    return acc;
-  }, {});
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+let DATA_DIR = path.join(__dirname, '../../data');
+
+export function setSettingsDataDir(dir: string) {
+  DATA_DIR = dir;
 }
 
-export function getSetting(key: string) {
-  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
-  return row?.value;
+export function getSettingsDataDir(): string {
+  return DATA_DIR;
 }
 
-export function upsertSettings(updates: Record<string, string>) {
-  const upsert = db.prepare(
-    'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
-  );
+const DEFAULTS: Record<string, string> = {
+  settlement_day: '4',
+  auto_snapshot: 'false',
+  base_currency: 'USDT',
+};
 
-  const transaction = db.transaction((entries: Array<[string, string]>) => {
-    for (const [key, value] of entries) {
-      upsert.run(key, value);
+function getPath(): string {
+  return path.join(DATA_DIR, 'settings.json');
+}
+
+function read(): Record<string, string> {
+  try {
+    const data = JSON.parse(fs.readFileSync(getPath(), 'utf-8'));
+    if (data && typeof data === 'object' && !Array.isArray(data)) {
+      return { ...DEFAULTS, ...data };
     }
-  });
+    return { ...DEFAULTS };
+  } catch {
+    return { ...DEFAULTS };
+  }
+}
 
-  transaction(Object.entries(updates));
+function write(settings: Record<string, string>): void {
+  const p = getPath();
+  const tmp = p + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(settings, null, 2), 'utf-8');
+  fs.renameSync(tmp, p);
+}
+
+export function getSettingsMap(): Record<string, string> {
+  return read();
+}
+
+export function getSetting(key: string): string | undefined {
+  return read()[key];
+}
+
+export function upsertSettings(updates: Record<string, string>): void {
+  const current = read();
+  write({ ...current, ...updates });
 }

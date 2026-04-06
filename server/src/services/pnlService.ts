@@ -14,7 +14,6 @@ import {
   updateRecord,
   type PnlRecord,
 } from '../repositories/pnlRepo.js';
-import { getLatestSnapshots } from '../repositories/snapshotsRepo.js';
 import { getPositionsSnapshot } from './positionsService.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -352,51 +351,6 @@ export async function createMonthlyPnlRecord(input: {
   return formatPnlRecord(getPnlRecordById(id));
 }
 
-export function calculatePnlFromSnapshots(period: 'weekly' | 'monthly') {
-  const snapshots = getLatestSnapshots(2);
-  if (snapshots.length < 2) {
-    throw new Error('Need at least 2 snapshots to calculate P&L');
-  }
-
-  const [latest, previous] = snapshots;
-  const startDate = previous.timestamp.split('T')[0];
-  const endDate = latest.timestamp.split('T')[0];
-  const days = Math.max(1, Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000));
-  const startingCapital = previous.total_fair_value;
-  const endingCapital = latest.total_fair_value;
-  const pnl = endingCapital - startingCapital;
-  const returnRate = startingCapital > 0 ? pnl / startingCapital : 0;
-  const annualizedReturn = (returnRate / days) * 365;
-  const id = uuidv4();
-
-  const record: PnlRecord = {
-    id,
-    period,
-    startDate,
-    endDate,
-    startingCapital,
-    endingCapital,
-    pnl,
-    returnRate,
-    days,
-    annualizedReturn,
-    status: 'done',
-    autoAccumulate: false,
-    editable: false,
-    incomeUniswap: 0,
-    incomeMorpho: 0,
-    incomeHlp: 0,
-    incomeTotal: 0,
-    lastUniswapValue: 0,
-    lastMorphoValue: 0,
-    lastHlpValue: 0,
-    lastAutoUpdateAt: null,
-    basePnl: 0,
-  };
-
-  insertRecord(record);
-  return formatPnlRecord(getPnlRecordById(id));
-}
 
 export function updateRevenueOverview(data: {
   periodLabel: string;

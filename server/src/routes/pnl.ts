@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { requireAdmin } from '../middleware/requireAdmin.js';
-import { createMonthlyPnlRecord, createWeeklyPnlRecord, calculatePnlFromSnapshots, deletePnlRecordById, getMonthlyPnlRecords, getRevenueOverview, getWeeklyPnlRecords, runDailyPnlAutoAccumulate, updatePnlRecordById, updateRevenueOverview } from '../services/pnlService.js';
+import { createMonthlyPnlRecord, createWeeklyPnlRecord, deletePnlRecordById, getMonthlyPnlRecords, getRevenueOverview, getWeeklyPnlRecords, runDailyPnlAutoAccumulate, updatePnlRecordById, updateRevenueOverview } from '../services/pnlService.js';
 
 const router = Router();
 
@@ -48,19 +48,6 @@ router.post('/monthly', requireAdmin, async (req, res) => {
   }
 });
 
-router.post('/calculate', requireAdmin, (req, res) => {
-  const { period } = req.body;
-  if (period !== 'weekly' && period !== 'monthly') {
-    return res.status(400).json({ error: 'Invalid period' });
-  }
-
-  try {
-    res.json(calculatePnlFromSnapshots(period));
-  } catch (error: any) {
-    const status = /Need at least 2 snapshots/.test(error.message) ? 400 : 500;
-    res.status(status).json({ error: error.message });
-  }
-});
 
 router.get('/revenue', (_req, res) => {
   res.json(getRevenueOverview());

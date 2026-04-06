@@ -14,7 +14,7 @@ const { mockFetchEvmBalances, mockFetchPrices } = vi.hoisted(() => ({
 }));
 
 vi.mock('../repositories/walletsRepo.js', () => ({
-  listWalletRows: () => [{ id: 'wallet-1', label: 'Main', address: '0x1234', chains_json: '["ethereum"]' }],
+  listWalletRows: () => [{ id: 'wallet-1', label: 'Main', address: '0x1234', chains: ['ethereum'] }],
 }));
 vi.mock('../repositories/manualAssetsRepo.js', () => ({
   listManualAssetRows: () => [],

@@ -1,31 +1,28 @@
-import Database, { type Database as DatabaseType } from 'better-sqlite3';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const schema = fs.readFileSync(path.join(__dirname, '../db/schema.sql'), 'utf-8');
 
 /**
- * Create a fresh in-memory SQLite database with the full schema applied.
- * Each test suite gets its own isolated DB instance.
+ * Create a temporary directory with empty JSON files for all repos.
+ * Provides test isolation for any combination of JSON-based repositories.
  */
-export function createTestDb(): DatabaseType {
-  const db = new Database(':memory:');
-  db.pragma('foreign_keys = ON');
-  db.exec(schema);
-  return db;
+export function createTestDataDir(): { dir: string; cleanup: () => void } {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'assetflow-test-'));
+  fs.writeFileSync(path.join(dir, 'weekly_pnl.json'), '{"records":[]}', 'utf-8');
+  fs.writeFileSync(path.join(dir, 'monthly_pnl.json'), '{"records":[]}', 'utf-8');
+  fs.writeFileSync(path.join(dir, 'wallets.json'), '{"records":[]}', 'utf-8');
+  fs.writeFileSync(path.join(dir, 'manual_assets.json'), '{"records":[]}', 'utf-8');
+  fs.writeFileSync(path.join(dir, 'settings.json'), '{}', 'utf-8');
+  const cleanup = () => fs.rmSync(dir, { recursive: true, force: true });
+  return { dir, cleanup };
 }
 
 /**
- * Create a temporary directory with empty weekly/monthly JSON files for test isolation.
- * Returns the dir path and a cleanup function.
+ * @deprecated Use createTestDataDir instead.
  */
 export function createTestPnlDir(): { dir: string; cleanup: () => void } {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pnl-test-'));
-  fs.writeFileSync(path.join(dir, 'weekly_pnl.json'), '{"records":[]}', 'utf-8');
-  fs.writeFileSync(path.join(dir, 'monthly_pnl.json'), '{"records":[]}', 'utf-8');
-  const cleanup = () => fs.rmSync(dir, { recursive: true, force: true });
-  return { dir, cleanup };
+  return createTestDataDir();
 }
