@@ -85,6 +85,28 @@ export function tickToSqrtPriceX96(tick: number): bigint {
 }
 
 /**
+ * Retry a thunk up to maxAttempts times with exponential backoff.
+ * Only retries on CALL_EXCEPTION with null data (RPC-level null response / rate limit).
+ */
+async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3, baseDelayMs = 800): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      // Only retry on RPC-level null response; propagate real contract reverts
+      if (err?.code === 'CALL_EXCEPTION' && err?.data === null) {
+        lastErr = err;
+        await new Promise((r) => setTimeout(r, baseDelayMs * (attempt + 1)));
+      } else {
+        throw err;
+      }
+    }
+  }
+  throw lastErr;
+}
+
+/**
  * Fetch all Uniswap V3 LP positions for an address on a given chain.
  */
 export async function fetchUniswapV3Positions(
@@ -103,7 +125,7 @@ export async function fetchUniswapV3Positions(
     const factory = new ethers.Contract(factoryAddr, FACTORY_ABI, provider);
 
     // Get number of positions
-    const balance = await nft.balanceOf(address);
+    const balance = await withRetry(() => nft.balanceOf(address));
     const count = Number(balance);
     if (count === 0) return [];
 
@@ -111,29 +133,30 @@ export async function fetchUniswapV3Positions(
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     const tokenIds: number[] = [];
     for (let i = 0; i < count; i++) {
-      if (i > 0) await sleep(200);
-      const tokenId = await nft.tokenOfOwnerByIndex(address, i);
+      if (i > 0) await sleep(400);
+      const tokenId = await withRetry(() => nft.tokenOfOwnerByIndex(address, i));
       tokenIds.push(Number(tokenId));
     }
 
-    await Promise.all(
-      tokenIds.map(async (tokenId) => {
-        try {
-          const pos = await nft.positions(tokenId);
+    // Sequential (not concurrent) to avoid Alchemy rate-limit on busy nodes
+    for (const tokenId of tokenIds) {
+      await sleep(300);
+      try {
+          const pos = await withRetry(() => nft.positions(tokenId));
           const liquidity = pos.liquidity;
 
           // Skip closed positions (zero liquidity and no owed fees)
-          if (liquidity === 0n && pos.tokensOwed0 === 0n && pos.tokensOwed1 === 0n) return;
+          if (liquidity === 0n && pos.tokensOwed0 === 0n && pos.tokensOwed1 === 0n) continue;
 
           // Get token info
           const token0Contract = new ethers.Contract(pos.token0, ERC20_ABI, provider);
           const token1Contract = new ethers.Contract(pos.token1, ERC20_ABI, provider);
 
           const [decimals0, symbol0, decimals1, symbol1] = await Promise.all([
-            token0Contract.decimals(),
-            token0Contract.symbol(),
-            token1Contract.decimals(),
-            token1Contract.symbol(),
+            withRetry(() => token0Contract.decimals()),
+            withRetry(() => token0Contract.symbol()),
+            withRetry(() => token1Contract.decimals()),
+            withRetry(() => token1Contract.symbol()),
           ]);
 
           let amount0 = 0;
@@ -141,10 +164,10 @@ export async function fetchUniswapV3Positions(
 
           if (liquidity > 0n) {
             // Get pool and current price
-            const poolAddr = await factory.getPool(pos.token0, pos.token1, pos.fee);
+            const poolAddr = await withRetry(() => factory.getPool(pos.token0, pos.token1, pos.fee));
             if (poolAddr !== ethers.ZeroAddress) {
               const pool = new ethers.Contract(poolAddr, POOL_ABI, provider);
-              const slot0 = await pool.slot0();
+              const slot0 = await withRetry(() => pool.slot0());
 
               const amounts = getAmountsFromLiquidity(
                 slot0.sqrtPriceX96,
@@ -193,11 +216,10 @@ export async function fetchUniswapV3Positions(
             fees0,
             fees1,
           });
-        } catch (e: any) {
-          console.error(`[Uniswap V3] Error fetching position ${tokenId}:`, e.message);
-        }
-      })
-    );
+      } catch (e: any) {
+        console.error(`[Uniswap V3] Error fetching position ${tokenId}:`, e.message);
+      }
+    }
   } catch (e: any) {
     console.error(`[Uniswap V3] Failed for ${chain}:`, e.message);
   }
