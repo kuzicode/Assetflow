@@ -147,7 +147,7 @@ export default function Layout() {
             const ath = athData[sym]?.ath;
             const drawdown = price && ath ? ((1 - price / ath) * 100) : null;
             const athFull = ath
-              ? `$${ath.toLocaleString(undefined, { maximumFractionDigits: ath >= 1000 ? 0 : 2 })}`
+              ? `$${ath.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
               : null;
             return (
               <div key={sym} className="flex items-center gap-4">
@@ -162,12 +162,12 @@ export default function Layout() {
                   <span className="text-xs font-bold text-on-surface">{sym}</span>
                   <span className="text-xs font-mono-data text-on-surface">
                     {price
-                      ? `$${price.toLocaleString(undefined, { maximumFractionDigits: sym === 'BTC' ? 0 : 2 })}`
+                      ? `$${price.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
                       : '—'}
                   </span>
                   {athFull && drawdown !== null && (
-                    <span className="text-[10px] font-mono-data text-outline">
-                      (ATH {athFull} <span className="text-error">-{drawdown.toFixed(1)}%</span>)
+                    <span className="text-xs font-mono-data text-outline">
+                      ({athFull} <span className="text-error">-{drawdown.toFixed(1)}%</span>)
                     </span>
                   )}
                 </div>
@@ -177,7 +177,7 @@ export default function Layout() {
           {spotPricesUpdatedAt && (
             <span className="flex items-center gap-1.5 text-xs text-outline/50 ml-2">
               <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse shrink-0" />
-              更新 {new Date(spotPricesUpdatedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}
+              {new Date(spotPricesUpdatedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })} Update
             </span>
           )}
         </div>
