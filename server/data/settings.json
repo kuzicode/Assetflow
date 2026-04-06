@@ -1,10 +1,5 @@
 {
   "settlement_day": "4",
   "auto_snapshot": "false",
-  "base_currency": "USDT",
-  "debank_api_key": "REDACTED_DEBANK_KEY",
-  "okx_api_key": "REDACTED_OKX_API_KEY",
-  "okx_secret_key": "REDACTED_OKX_SECRET",
-  "okx_passphrase": "REDACTED_OKX_PASSPHRASE",
-  "okx_project_id": "REDACTED_OKX_PROJECT_ID"
+  "base_currency": "USDT"
 }

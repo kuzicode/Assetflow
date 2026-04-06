@@ -6,6 +6,9 @@ CLAUDE.md
 
 # Runtime
 assetflow.pid
+*.db
+*.db-shm
+*.db-wal
 
 # Logs
 logs
