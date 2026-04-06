@@ -232,10 +232,10 @@ export async function fetchUniswapV3Positions(
           let fees0 = 0;
           let fees1 = 0;
           try {
-            const collected = await nft.collect.staticCall(
+            const collected = await withRetry(() => nft.collect.staticCall(
               { tokenId, recipient: address, amount0Max: MAX_UINT128, amount1Max: MAX_UINT128 },
               { from: address }
-            );
+            ));
             fees0 = parseFloat(ethers.formatUnits(collected.amount0, Number(decimals0)));
             fees1 = parseFloat(ethers.formatUnits(collected.amount1, Number(decimals1)));
           } catch (feeErr: any) {
