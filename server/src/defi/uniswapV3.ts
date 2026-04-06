@@ -84,22 +84,32 @@ export function tickToSqrtPriceX96(tick: number): bigint {
   return BigInt(Math.round(sqrtRatio * Number(2n ** 96n)));
 }
 
+/** Well-known mainnet token metadata — avoids RPC calls for tokens with non-standard ABIs (e.g. USDT bytes32 symbol). */
+const KNOWN_TOKEN_META: Record<string, { symbol: string; decimals: number }> = {
+  '0xdac17f958d2ee523a2206206994597c13d831ec7': { symbol: 'USDT', decimals: 6 },
+  '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48': { symbol: 'USDC', decimals: 6 },
+  '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2': { symbol: 'WETH', decimals: 18 },
+  '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599': { symbol: 'WBTC', decimals: 8 },
+  '0x6b175474e89094c44da98b954eedeac495271d0f': { symbol: 'DAI', decimals: 18 },
+  '0x514910771af9ca656af840dff83e8264ecf986ca': { symbol: 'LINK', decimals: 18 },
+};
+
 /**
- * USDT and a few other tokens return bytes32 from symbol()/name() instead of string.
- * This helper falls back to raw call + bytes32 decoding when the ABI call fails.
+ * Get token symbol — checks well-known cache first, falls back to RPC with bytes32 fallback (USDT etc.).
  */
 async function getTokenSymbol(provider: ethers.Provider, tokenAddr: string): Promise<string> {
+  const known = KNOWN_TOKEN_META[tokenAddr.toLowerCase()];
+  if (known) return known.symbol;
+
   const abi = ['function symbol() view returns (string)'];
   const contract = new ethers.Contract(tokenAddr, abi, provider);
   try {
-    return await contract.symbol();
+    return await withRetry(() => contract.symbol());
   } catch {
     try {
       const raw = await provider.call({ to: tokenAddr, data: '0x95d89b41' });
       if (raw && raw.length >= 66) {
-        // Try decoding as bytes32
-        const b32 = ethers.decodeBytes32String('0x' + raw.slice(2, 66));
-        return b32.replace(/\0/g, '');
+        return ethers.decodeBytes32String('0x' + raw.slice(2, 66)).replace(/\0/g, '');
       }
     } catch {}
     return 'UNKNOWN';
@@ -107,16 +117,19 @@ async function getTokenSymbol(provider: ethers.Provider, tokenAddr: string): Pro
 }
 
 async function getTokenDecimals(provider: ethers.Provider, tokenAddr: string): Promise<number> {
+  const known = KNOWN_TOKEN_META[tokenAddr.toLowerCase()];
+  if (known) return known.decimals;
+
   const abi = ['function decimals() view returns (uint8)'];
   const contract = new ethers.Contract(tokenAddr, abi, provider);
   try {
-    return Number(await contract.decimals());
+    return Number(await withRetry(() => contract.decimals()));
   } catch {
     try {
       const raw = await provider.call({ to: tokenAddr, data: '0x313ce567' });
       if (raw && raw !== '0x') return Number(ethers.toBigInt(raw));
     } catch {}
-    return 18; // fallback
+    return 18;
   }
 }
 
