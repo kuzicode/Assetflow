@@ -85,6 +85,42 @@ export function tickToSqrtPriceX96(tick: number): bigint {
 }
 
 /**
+ * USDT and a few other tokens return bytes32 from symbol()/name() instead of string.
+ * This helper falls back to raw call + bytes32 decoding when the ABI call fails.
+ */
+async function getTokenSymbol(provider: ethers.Provider, tokenAddr: string): Promise<string> {
+  const abi = ['function symbol() view returns (string)'];
+  const contract = new ethers.Contract(tokenAddr, abi, provider);
+  try {
+    return await contract.symbol();
+  } catch {
+    try {
+      const raw = await provider.call({ to: tokenAddr, data: '0x95d89b41' });
+      if (raw && raw.length >= 66) {
+        // Try decoding as bytes32
+        const b32 = ethers.decodeBytes32String('0x' + raw.slice(2, 66));
+        return b32.replace(/\0/g, '');
+      }
+    } catch {}
+    return 'UNKNOWN';
+  }
+}
+
+async function getTokenDecimals(provider: ethers.Provider, tokenAddr: string): Promise<number> {
+  const abi = ['function decimals() view returns (uint8)'];
+  const contract = new ethers.Contract(tokenAddr, abi, provider);
+  try {
+    return Number(await contract.decimals());
+  } catch {
+    try {
+      const raw = await provider.call({ to: tokenAddr, data: '0x313ce567' });
+      if (raw && raw !== '0x') return Number(ethers.toBigInt(raw));
+    } catch {}
+    return 18; // fallback
+  }
+}
+
+/**
  * Retry a thunk up to maxAttempts times with exponential backoff.
  * Only retries on CALL_EXCEPTION with null data (RPC-level null response / rate limit).
  */
@@ -148,15 +184,12 @@ export async function fetchUniswapV3Positions(
           // Skip closed positions (zero liquidity and no owed fees)
           if (liquidity === 0n && pos.tokensOwed0 === 0n && pos.tokensOwed1 === 0n) continue;
 
-          // Get token info
-          const token0Contract = new ethers.Contract(pos.token0, ERC20_ABI, provider);
-          const token1Contract = new ethers.Contract(pos.token1, ERC20_ABI, provider);
-
+          // Get token info — use helpers that handle bytes32 symbol (e.g. USDT)
           const [decimals0, symbol0, decimals1, symbol1] = await Promise.all([
-            withRetry(() => token0Contract.decimals()),
-            withRetry(() => token0Contract.symbol()),
-            withRetry(() => token1Contract.decimals()),
-            withRetry(() => token1Contract.symbol()),
+            getTokenDecimals(provider, pos.token0),
+            getTokenSymbol(provider, pos.token0),
+            getTokenDecimals(provider, pos.token1),
+            getTokenSymbol(provider, pos.token1),
           ]);
 
           let amount0 = 0;
