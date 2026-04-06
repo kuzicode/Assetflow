@@ -61,7 +61,7 @@ function upsertIncomeDailySnapshot(
   if (!bl) return;
   const pnlUniswap = Math.max(0, values.uniswap - base.uniswap);
   const pnlMorpho = Math.max(0, values.morpho - base.morpho);
-  const pnlHlp = Math.max(0, values.hlp - base.hlp);
+  const pnlHlp = values.hlp - base.hlp;
   const entry = {
     date,
     uniswap: values.uniswap,
@@ -448,7 +448,7 @@ export async function runDailyPnlAutoAccumulate(today = getTodayUtcDate()) {
 
     const weekUniswap = Math.max(0, income.uniswap - (record.lastUniswapValue || 0));
     const weekMorpho = Math.max(0, income.morpho - (record.lastMorphoValue || 0));
-    const weekHlp = Math.max(0, income.hlp - (record.lastHlpValue || 0));
+    const weekHlp = income.hlp - (record.lastHlpValue || 0);
     const nextPnl = weekUniswap + weekMorpho + weekHlp;
     const days = diffDaysUtc(record.startDate, today);
     const metrics = recalcByPnl(record.startingCapital, nextPnl, days);

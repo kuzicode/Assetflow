@@ -145,6 +145,9 @@ export async function buildPositionsSnapshot(): Promise<PositionsSnapshot> {
     if (!prices[symbol]) prices[symbol] = price;
   };
 
+  // OKX path: raw Uniswap fee positions; USD values computed after prices are finalized.
+  const pendingUniFees: Array<{ walletLabel: string; chain: string; token0Symbol: string; token1Symbol: string; fees0: number; fees1: number }> = [];
+
   if (okxReady) {
     const okxCreds: OKXCredentials = {
       apiKey: okxApiKey!,
@@ -224,21 +227,17 @@ export async function buildPositionsSnapshot(): Promise<PositionsSnapshot> {
               const provider = createProvider(chain);
               if (!provider) return;
               const uniPositions = await fetchUniswapV3Positions(chain, wallet.address, provider);
+              console.log(`[UniV3] ${wallet.label}/${chain}: found ${uniPositions.length} positions`);
               for (const position of uniPositions) {
-                const ethPrice = prices.ETH || prices.WETH || 0;
-                const price0 = STABLECOIN_SYMBOLS.includes(position.token0Symbol) ? 1 : (prices[position.token0Symbol] || ethPrice);
-                const price1 = STABLECOIN_SYMBOLS.includes(position.token1Symbol) ? 1 : (prices[position.token1Symbol] || ethPrice);
-                const totalFeeUsd = (position.fees0 > 0.000001 ? position.fees0 * price0 : 0) + (position.fees1 > 0.000001 ? position.fees1 * price1 : 0);
-                if (totalFeeUsd > 0.01) {
-                  if (!groupMap.STABLE) groupMap.STABLE = [];
-                  groupMap.STABLE.push({
-                    id: uuidv4(),
-                    label: `${wallet.label}-${position.token0Symbol}/${position.token1Symbol}-手续费`,
-                    source: 'lp_fees',
-                    protocol: 'Uniswap V3',
+                console.log(`[UniV3]   #${position.tokenId} ${position.token0Symbol}/${position.token1Symbol}: fees0=${position.fees0}, fees1=${position.fees1}`);
+                if (position.fees0 > 0.000001 || position.fees1 > 0.000001) {
+                  pendingUniFees.push({
+                    walletLabel: wallet.label,
                     chain,
-                    amount: totalFeeUsd,
-                    usdValue: totalFeeUsd,
+                    token0Symbol: position.token0Symbol,
+                    token1Symbol: position.token1Symbol,
+                    fees0: position.fees0,
+                    fees1: position.fees1,
                   });
                 }
               }
@@ -378,6 +377,28 @@ export async function buildPositionsSnapshot(): Promise<PositionsSnapshot> {
     for (const source of fallbackSnapshot.partialFailureSources) partialFailureSources.add(source);
   }
 
+  // OKX path: apply USD values to deferred Uniswap fee positions now that prices are finalized
+  if (pendingUniFees.length > 0) {
+    const ethPrice = prices.ETH || prices.WETH || 0;
+    for (const pos of pendingUniFees) {
+      const price0 = STABLECOIN_SYMBOLS.includes(pos.token0Symbol) ? 1 : (prices[pos.token0Symbol] || ethPrice);
+      const price1 = STABLECOIN_SYMBOLS.includes(pos.token1Symbol) ? 1 : (prices[pos.token1Symbol] || ethPrice);
+      const totalFeeUsd = (pos.fees0 > 0.000001 ? pos.fees0 * price0 : 0) + (pos.fees1 > 0.000001 ? pos.fees1 * price1 : 0);
+      if (totalFeeUsd > 0.01) {
+        if (!groupMap.STABLE) groupMap.STABLE = [];
+        groupMap.STABLE.push({
+          id: uuidv4(),
+          label: `${pos.walletLabel}-${pos.token0Symbol}/${pos.token1Symbol}-手续费`,
+          source: 'lp_fees',
+          protocol: 'Uniswap V3',
+          chain: pos.chain,
+          amount: totalFeeUsd,
+          usdValue: totalFeeUsd,
+        });
+      }
+    }
+  }
+
   for (const asset of listManualAssetRows()) {
     const group = asset.baseToken;
     if (!groupMap[group]) groupMap[group] = [];
@@ -391,11 +412,13 @@ export async function buildPositionsSnapshot(): Promise<PositionsSnapshot> {
   }
 
   const positions = finalizePositions(groupMap, prices);
+  const incomeBreakdown = buildIncomeBreakdown(positions);
+  console.log(`[Income] uniswap=${incomeBreakdown.uniswap.toFixed(2)} morpho=${incomeBreakdown.morpho.toFixed(2)} hlp=${incomeBreakdown.hlp.toFixed(2)} pendingUniFees=${pendingUniFees.length}`);
   return {
     positions,
     prices,
     timestamp: new Date().toISOString(),
-    incomeBreakdown: buildIncomeBreakdown(positions),
+    incomeBreakdown,
     isStale: partialFailureSources.size > 0 || missingSymbols.size > 0,
     missingSymbols: [...missingSymbols],
     partialFailureSources: [...partialFailureSources],
