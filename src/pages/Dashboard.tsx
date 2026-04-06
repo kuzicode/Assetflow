@@ -49,6 +49,7 @@ export default function Dashboard() {
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({ startDate: '', endDate: '', initialInvestment: '', fairValue: '', cashValue: '', periodLabel: '' });
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const [showMonthlyForm, setShowMonthlyForm] = useState(false);
   const [monthlyForm, setMonthlyForm] = useState({ month: '' });
@@ -78,6 +79,7 @@ export default function Dashboard() {
   const positionsTotalUsd = positions.reduce((s, p) => s + p.totalUsdValue, 0);
 
   const handleEditOpen = () => {
+    setSaveError(null);
     setFormData({
       startDate: revenueOverview?.startDate || '',
       endDate: revenueOverview?.endDate || '',
@@ -91,6 +93,7 @@ export default function Dashboard() {
 
   const handleSave = async () => {
     setSaving(true);
+    setSaveError(null);
     try {
       await updateRevenueOverview({
         periodLabel: formData.periodLabel,
@@ -101,6 +104,8 @@ export default function Dashboard() {
         cashValue: parseFloat(formData.cashValue) || 0,
       });
       setIsEditing(false);
+    } catch (err: any) {
+      setSaveError(err.message || '保存失败');
     } finally {
       setSaving(false);
     }
@@ -147,6 +152,7 @@ export default function Dashboard() {
   }
 
   const openEdit = (rec: any, list: any[]) => {
+    setSaveError(null);
     const autoStart = computeAutoStartingCapital(list, rec);
     setEditingId(rec.id);
     setEditForm({
@@ -159,14 +165,19 @@ export default function Dashboard() {
   };
 
   const saveEdit = async (id: string) => {
-    await updatePnlRecord(id, {
-      startDate: editForm.startDate,
-      endDate: editForm.endDate,
-      startingCapital: parseFloat(editForm.startingCapital) || 0,
-      pnl: parseFloat(editForm.pnl) || 0,
-      days: parseInt(editForm.days) || 1,
-    } as any);
-    setEditingId(null);
+    setSaveError(null);
+    try {
+      await updatePnlRecord(id, {
+        startDate: editForm.startDate,
+        endDate: editForm.endDate,
+        startingCapital: parseFloat(editForm.startingCapital) || 0,
+        pnl: parseFloat(editForm.pnl) || 0,
+        days: parseInt(editForm.days) || 1,
+      } as any);
+      setEditingId(null);
+    } catch (err: any) {
+      setSaveError(err.message || '保存失败');
+    }
   };
 
   const stablePos = positions.find((p) => p.baseToken === 'STABLE');
@@ -369,6 +380,9 @@ export default function Dashboard() {
                     />
                   </div>
                 </div>
+                {saveError && isEditing && (
+                  <p className="text-error text-xs font-medium">{saveError}</p>
+                )}
                 <div className="flex items-center gap-3 pt-1">
                   <button
                     onClick={handleSave}
@@ -686,6 +700,9 @@ export default function Dashboard() {
                             </td>
                             {isAdmin && (
                               <td className={`${pnlTdAction} space-x-2`}>
+                                {inEdit && saveError && (
+                                  <div className="text-error text-xs mb-1">{saveError}</div>
+                                )}
                                 {inEdit ? (
                                   <>
                                     <button onClick={() => saveEdit(rec.id)} className="text-primary">保存</button>
@@ -876,6 +893,9 @@ export default function Dashboard() {
                             </td>
                             {isAdmin && (
                               <td className={pnlTdAction}>
+                                {inEdit && saveError && (
+                                  <div className="text-error text-xs mb-1">{saveError}</div>
+                                )}
                                 {inEdit ? (
                                   <>
                                     <button onClick={() => saveEdit(rec.id)} className="text-primary">保存</button>
