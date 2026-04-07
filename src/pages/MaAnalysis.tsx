@@ -5,7 +5,7 @@ import { apiFetch } from '../lib/api';
 import { useStore } from '../store/useStore';
 import type { MaChartResponse, MaTrendsResponse } from '../types';
 
-const FAVORITES = ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'DOGE', 'UNI', 'AAVE'] as const;
+const FAVORITES = ['BTC', 'ETH', 'SOL', 'BNB'] as const;
 
 
 const TREND_LABELS: Record<string, string> = {
@@ -265,7 +265,8 @@ export default function MaAnalysis() {
     <div className="space-y-6">
       {/* Favorites Bar */}
       <section className="rounded-[2rem] bg-surface-container-lowest p-3 shadow-[0px_12px_32px_rgba(25,28,29,0.04)]">
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs text-on-surface-variant px-1.5">快捷查询：</span>
           {FAVORITES.map((favorite) => (
             <button
               key={favorite}
