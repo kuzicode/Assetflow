@@ -228,7 +228,7 @@ export default function Positions() {
                             const isPos = inc >= 0;
                             return (
                               <span className={`text-sm font-mono-data ${isPos ? 'text-primary' : 'text-tertiary'}`}>
-                                {formatIncrement(inc)}
+                                ({formatIncrement(inc)})
                               </span>
                             );
                           })()}

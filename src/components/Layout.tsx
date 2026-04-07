@@ -177,7 +177,7 @@ export default function Layout() {
           {spotPricesUpdatedAt && (
             <span className="flex items-center gap-1.5 text-xs text-outline/50 ml-2">
               <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse shrink-0" />
-              {new Date(spotPricesUpdatedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })} Update
+              {new Date(spotPricesUpdatedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })} Updated
             </span>
           )}
         </div>
