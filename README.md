@@ -167,32 +167,41 @@ make start        # 生产启动（非 systemd）
 make dev          # 前后端开发并行
 make test         # 后端 Vitest
 make lint         # 前端 ESLint
-make db-pull      # 从生产服务器同步数据库到本地（见下方说明）
 ```
 
 ---
 
-## 5.1 从生产服务器同步数据库
+## 5.1 从生产服务器同步数据
 
-数据库文件（`server/data/assetflow.db`）不进 git，本地开发时如需与生产数据对齐，执行：
+数据文件（`server/data/*.json`）不进 git，本地开发时如需与生产数据对齐，执行：
 
 ```bash
-make db-pull
+rsync -avz xw:/root/cook/Assetflow/server/data/ server/data/
 ```
 
-- 默认 SSH 别名为 `xw`，无需停止服务器进程，使用 SQLite 在线热备份保证数据一致性。
-- 如需指定其他 SSH 别名：`make db-pull REMOTE=yourhost`
-- 拉取完成后直接覆盖本地 `server/data/assetflow.db`，重启本地开发服务器即生效。
-
-> 注意：此操作为单向同步（服务器 → 本地），不会影响服务器数据，也不涉及 git。
+- 默认 SSH 别名为 `xw`，直接覆盖本地 `server/data/`，重启本地开发服务器即生效。
+- 此操作为单向同步（服务器 → 本地），不影响服务器数据，也不涉及 git。
 
 ---
 
 ## 6. 数据与目录
 
-- SQLite 数据库：`server/data/assetflow.db`
+数据以 JSON 文件形式存储在 `server/data/`，无需数据库引擎：
+
+| 文件 | 用途 |
+|------|------|
+| `wallets.json` | 钱包地址列表 |
+| `manual_assets.json` | 手动录入资产 |
+| `weekly_pnl.json` | 周度 P&L 记录 |
+| `monthly_pnl.json` | 月度 P&L 记录 |
+| `income_baselines.json` | 收益基准线 |
+| `revenue_overview.json` | 营收概览快照 |
+| `settings.json` | 用户设置 |
+
 - 前端生产静态资源目录：`client/`
 - 后端编译产物：`server/dist/`
+
+> 所有数据文件均不进 git，请自行备份 `server/data/` 目录。
 
 ---
 
@@ -200,7 +209,7 @@ make db-pull
 
 | 问题 | 处理方式 |
 |------|----------|
-| `better-sqlite3` 安装失败 | 确认已安装 `build-essential`，并使用 Node 22 |
+| 依赖安装失败 | 确认已安装 `build-essential`，并使用 Node 22 |
 | 页面还是旧静态资源 | 重新执行 `make build`，确认 `client/` 已更新，再重启服务 |
 | 端口无法访问 | 检查 `systemctl status assetflow`、防火墙（`ufw`）和端口监听 |
 | 访问 3001 空白/404 | 确认 `client/index.html` 存在；未执行构建时会缺失 |
