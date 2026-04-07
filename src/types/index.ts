@@ -116,6 +116,26 @@ export interface PriceSnapshot {
   timestamp: string;
 }
 
+// --- MA 图表 ---
+export interface MaChartPoint {
+  time: string;
+  close: number;
+  ma2: number; ma3: number; ma4: number; ma5: number; ma6: number;
+  macd: number; signal: number; hist: number;
+}
+export interface MaChartResponse {
+  symbol: string;
+  interval: string;
+  chartData: MaChartPoint[];
+  marketInfo: { price: number; ma2: number; ma3: number; ma4: number; ma5: number; ma6: number };
+  analysis: { trend: string; signalType: string; support: number; resistance: number; riskLevel: string; momentum: number };
+  timestamp: string;
+}
+export interface MaTrendsResponse {
+  trends: Record<string, string[]>;
+  timestamp: string;
+}
+
 // --- 设置 ---
 export interface AppSettings {
   settlement_day: string;

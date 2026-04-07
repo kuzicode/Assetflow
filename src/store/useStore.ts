@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { AppSettings, ManualAsset, PnlRecord, PositionsSnapshot, PriceSnapshot, RevenueOverview, TokenPosition, Wallet, YieldsData } from '../types';
+import type { AppSettings, MaChartResponse, MaTrendsResponse, ManualAsset, PnlRecord, PositionsSnapshot, PriceSnapshot, RevenueOverview, TokenPosition, Wallet, YieldsData } from '../types';
 import { apiFetch } from '../lib/api';
 
 const POSITIONS_CACHE_KEY = 'assetflow_positions_cache';
@@ -49,6 +49,12 @@ interface AppState {
   fetchSpotPrices: () => Promise<void>;
   fetchYields: (force?: boolean) => Promise<void>;
   setError: (error: string | null) => void;
+  // MA chart cache: key = `${symbol}-${interval}`
+  maChartCache: Record<string, MaChartResponse>;
+  maTrendsCache: MaTrendsResponse | null;
+  prefetchMaChart: () => Promise<void>;
+  setMaChartCache: (key: string, data: MaChartResponse) => void;
+  setMaTrendsCache: (data: MaTrendsResponse) => void;
 }
 
 function isAuthError(error: unknown) {
@@ -128,6 +134,8 @@ export const useStore = create<AppState>((set, get) => ({
   loading: false,
   error: null,
   initialized: false,
+  maChartCache: {},
+  maTrendsCache: null,
 
   setAuthState: ({ mode, token }) => {
     if (mode) localStorage.setItem('authMode', mode);
@@ -160,7 +168,36 @@ export const useStore = create<AppState>((set, get) => ({
     ]);
 
     set({ initialized: true });
+
+    // Preload BTC MA chart in background (non-blocking)
+    get().prefetchMaChart();
   },
+
+  prefetchMaChart: async () => {
+    try {
+      const [chartData, trendsData] = await Promise.all([
+        apiFetch('/api/indicators/ma/chart', {
+          method: 'POST',
+          body: JSON.stringify({ symbol: 'BTC', interval: '4h' }),
+        }),
+        apiFetch('/api/indicators/ma/trends', {
+          method: 'POST',
+          body: JSON.stringify({ interval: '4h', symbols: ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'DOGE', 'UNI', 'AAVE'] }),
+        }),
+      ]);
+      set((state) => ({
+        maChartCache: { ...state.maChartCache, 'BTC-4h': chartData },
+        maTrendsCache: trendsData,
+      }));
+    } catch {
+      // silently ignore — page will fetch on demand
+    }
+  },
+
+  setMaChartCache: (key, data) =>
+    set((state) => ({ maChartCache: { ...state.maChartCache, [key]: data } })),
+
+  setMaTrendsCache: (data) => set({ maTrendsCache: data }),
 
   loadPositions: async () => {
     const cached = readCachedPositions();

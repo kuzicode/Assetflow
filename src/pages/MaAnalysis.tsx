@@ -2,49 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { createChart, ColorType, LineStyle, LineSeries, HistogramSeries } from 'lightweight-charts';
 import type { IChartApi, ISeriesApi, UTCTimestamp } from 'lightweight-charts';
 import { apiFetch } from '../lib/api';
+import { useStore } from '../store/useStore';
+import type { MaChartResponse, MaTrendsResponse } from '../types';
 
 const FAVORITES = ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'DOGE', 'UNI', 'AAVE'] as const;
 
-interface ChartPoint {
-  time: string;
-  close: number;
-  ma2: number;
-  ma3: number;
-  ma4: number;
-  ma5: number;
-  ma6: number;
-  macd: number;
-  signal: number;
-  hist: number;
-}
-
-interface MaChartResponse {
-  symbol: string;
-  interval: string;
-  chartData: ChartPoint[];
-  marketInfo: {
-    price: number;
-    ma2: number;
-    ma3: number;
-    ma4: number;
-    ma5: number;
-    ma6: number;
-  };
-  analysis: {
-    trend: string;
-    signalType: string;
-    support: number;
-    resistance: number;
-    riskLevel: string;
-    momentum: number;
-  };
-  timestamp: string;
-}
-
-interface MaTrendsResponse {
-  trends: Record<string, string[]>;
-  timestamp: string;
-}
 
 const TREND_LABELS: Record<string, string> = {
   above_ma4: '突破强势线',
@@ -123,10 +85,11 @@ const CHART_BASE_OPTIONS = {
 } as const;
 
 export default function MaAnalysis() {
+  const { maChartCache, maTrendsCache, setMaChartCache, setMaTrendsCache } = useStore();
   const [symbol, setSymbol] = useState('BTC');
   const interval = '4h';
   const [chart, setChart] = useState<MaChartResponse | null>(null);
-  const [trends, setTrends] = useState<MaTrendsResponse | null>(null);
+  const [trends, setTrends] = useState<MaTrendsResponse | null>(maTrendsCache);
   const [loadingChart, setLoadingChart] = useState(false);
   const [loadingTrends, setLoadingTrends] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -230,6 +193,12 @@ export default function MaAnalysis() {
   }, [chart]);
 
   const loadChart = async (nextSymbol = symbol, nextInterval = interval) => {
+    const cacheKey = `${nextSymbol}-${nextInterval}`;
+    const cached = maChartCache[cacheKey];
+    if (cached) {
+      setChart(cached);
+      return;
+    }
     setLoadingChart(true);
     setError(null);
     try {
@@ -238,6 +207,7 @@ export default function MaAnalysis() {
         body: JSON.stringify({ symbol: nextSymbol, interval: nextInterval }),
       });
       setChart(data);
+      setMaChartCache(cacheKey, data);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'MA 指标加载失败');
     } finally {
@@ -246,6 +216,10 @@ export default function MaAnalysis() {
   };
 
   const loadTrends = async (nextInterval = interval) => {
+    if (maTrendsCache) {
+      setTrends(maTrendsCache);
+      return;
+    }
     setLoadingTrends(true);
     try {
       const data = await apiFetch('/api/indicators/ma/trends', {
@@ -253,12 +227,23 @@ export default function MaAnalysis() {
         body: JSON.stringify({ interval: nextInterval, symbols: FAVORITES }),
       });
       setTrends(data);
+      setMaTrendsCache(data);
     } catch {
       setTrends(null);
     } finally {
       setLoadingTrends(false);
     }
   };
+
+  // Sync store cache into local state when it arrives after mount
+  useEffect(() => {
+    const cacheKey = `${symbol}-${interval}`;
+    if (!chart && maChartCache[cacheKey]) setChart(maChartCache[cacheKey]);
+  }, [maChartCache]);
+
+  useEffect(() => {
+    if (!trends && maTrendsCache) setTrends(maTrendsCache);
+  }, [maTrendsCache]);
 
   useEffect(() => {
     loadChart();
