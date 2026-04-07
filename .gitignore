@@ -10,6 +10,9 @@ assetflow.pid
 *.db-shm
 *.db-wal
 
+# Data files (private, sync via rsync from server)
+server/data/
+
 # Logs
 logs
 *.log
