@@ -59,9 +59,30 @@ const SOURCE_LABELS: Record<string, string> = {
   cex_manual: 'CEX 手动录入',
 };
 
+// USD increment formatted as +1,234 or -1,234
+function formatIncrement(value: number): string {
+  const rounded = Math.round(Math.abs(value));
+  return (value >= 0 ? '+' : '-') + rounded.toLocaleString();
+}
+
+// Map source → which weekly income field to use
+const SOURCE_INCOME_KEY: Partial<Record<string, 'incomeUniswap' | 'incomeMorpho' | 'incomeHlp'>> = {
+  lp_fees: 'incomeUniswap',
+  lending: 'incomeMorpho',
+  hlp: 'incomeHlp',
+};
+
 export default function Positions() {
   const navigate = useNavigate();
-  const { positions, manualAssets, revenueOverview, prices, positionsUpdatedAt, loading, authMode, initializeApp, fetchPositions } = useStore();
+  const { positions, manualAssets, revenueOverview, prices, positionsUpdatedAt, loading, authMode, weeklyPnl, initializeApp, fetchPositions } = useStore();
+
+  // Pick the current in-progress weekly record for increment display
+  const inProgressWeekly = weeklyPnl.find(r => r.autoAccumulate && r.status !== 'done');
+  const weeklyIncome = {
+    incomeUniswap: inProgressWeekly?.incomeUniswap ?? 0,
+    incomeMorpho:  inProgressWeekly?.incomeMorpho  ?? 0,
+    incomeHlp:     inProgressWeekly?.incomeHlp     ?? 0,
+  };
   const isAdmin = authMode === 'admin';
 
   useEffect(() => {
@@ -192,12 +213,26 @@ export default function Positions() {
                     return (
                       <div key={source}>
                         <p className="text-xs text-on-surface-variant mb-1">{SOURCE_LABELS[source]}</p>
-                        <p className={`text-xl font-semibold font-mono-data ${
-                          source === 'lp_fees' ? 'text-primary' :
-                          isLoss ? 'text-tertiary' : ''
-                        }`}>
-                          {isLoss ? '- ' : ''}{formatAmount(total, token)}
-                        </p>
+                        <div className="flex items-baseline gap-2">
+                          <p className={`text-xl font-semibold font-mono-data ${
+                            source === 'lp_fees' ? 'text-primary' :
+                            isLoss ? 'text-tertiary' : ''
+                          }`}>
+                            {isLoss ? '- ' : ''}{formatAmount(total, token)}
+                          </p>
+                          {(() => {
+                            const key = SOURCE_INCOME_KEY[source];
+                            if (!key || !inProgressWeekly) return null;
+                            const inc = weeklyIncome[key];
+                            if (inc === 0) return null;
+                            const isPos = inc >= 0;
+                            return (
+                              <span className={`text-sm font-mono-data ${isPos ? 'text-primary' : 'text-tertiary'}`}>
+                                {formatIncrement(inc)}
+                              </span>
+                            );
+                          })()}
+                        </div>
                       </div>
                     );
                   })}
