@@ -3,6 +3,10 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 
 // Load .env from project root regardless of CWD (make dev-server runs from server/)
+// IMPORTANT: dotenv.config() must run before any other module imports so that
+// process.env vars (e.g. ETH_RPC_URL) are set when chains.ts initialises EVM_RPCS.
+// Static imports are hoisted before module body in ESM, so we use dynamic import()
+// for everything that transitively reads process.env at module-load time.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
@@ -18,12 +22,13 @@ if (proxyUrl) {
   console.log(`[Proxy] Global dispatcher set to ${proxyUrl}`);
 }
 
-import app from './app.js';
-import cron from 'node-cron';
-import { runDailyPnlAutoAccumulate } from './routes/pnl.js';
-import { prefetchYields } from './routes/yields.js';
-import { getPositionsSnapshot } from './services/positionsService.js';
-import { getMvrv, getAhr999, getBtcdom } from './services/indicatorService.js';
+// Dynamic imports — must come AFTER dotenv.config() so env vars are visible
+const { default: app } = await import('./app.js');
+const { default: cron } = await import('node-cron');
+const { runDailyPnlAutoAccumulate } = await import('./routes/pnl.js');
+const { prefetchYields } = await import('./routes/yields.js');
+const { getPositionsSnapshot } = await import('./services/positionsService.js');
+const { getMvrv, getAhr999, getBtcdom } = await import('./services/indicatorService.js');
 
 const PORT = process.env.PORT || 3001;
 
