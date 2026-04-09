@@ -223,11 +223,14 @@ export default function Dashboard() {
     // in_progress 记录的 endDate 会持续推进到今天，用 startDate 定归属月份
     // settled/locked 用 endDate（如 0131-0205 视为 2月第1周）
     const ref = rec.status === 'pending' ? rec.startDate : rec.endDate;
-    const month = new Date(`${ref}T00:00:00`).getMonth() + 1;
+    const refDate = new Date(`${ref}T00:00:00`);
+    const year = refDate.getFullYear();
+    const month = refDate.getMonth() + 1;
     const sameMonth = list
       .filter((r) => {
         const rRef = r.status === 'pending' ? r.startDate : r.endDate;
-        return new Date(`${rRef}T00:00:00`).getMonth() + 1 === month;
+        const rd = new Date(`${rRef}T00:00:00`);
+        return rd.getFullYear() === year && rd.getMonth() + 1 === month;
       })
       .slice()
       .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());

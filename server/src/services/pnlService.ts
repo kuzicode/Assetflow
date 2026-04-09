@@ -204,19 +204,19 @@ export async function createWeeklyPnlRecord(input: {
   days?: number;
 }) {
   const latestDone = getLatestNonInProgressWeekly();
+  const weeklyPending = getLatestPnlRecord('weekly', 'pending');
+
+  // New week starts from the settled week's ending capital (pending takes priority over latestDone)
+  const baselineRecord = weeklyPending || latestDone;
   const resolvedStartingCapital =
     input.startingCapital != null
       ? Number(input.startingCapital)
-      : latestDone
-        ? Number(latestDone.endingCapital)
+      : baselineRecord
+        ? Number(baselineRecord.endingCapital)
         : null;
 
   if (resolvedStartingCapital == null || !Number.isFinite(resolvedStartingCapital)) {
     throw new Error('Missing startingCapital and no latest done weekly record to infer from');
-  }
-
-  if (latestDone && Number(resolvedStartingCapital) !== Number(latestDone.endingCapital)) {
-    throw new Error('startingCapital must equal latest done weekly endingCapital');
   }
 
   const today = getTodayUtcDate();
@@ -225,16 +225,17 @@ export async function createWeeklyPnlRecord(input: {
   const resolvedPnl = input.pnl != null ? Number(input.pnl) : 0;
   const metrics = recalcByPnl(resolvedStartingCapital, resolvedPnl, resolvedDays);
   const id = uuidv4();
-  const weeklyPending = getLatestPnlRecord('weekly', 'pending');
+
+  const creatingHistoricalDone = !!input.endDate && (input.pnl != null || input.days != null);
+  const status = creatingHistoricalDone ? 'done' : 'pending';
+
+  // Fetch income BEFORE settling the old pending — if this fails, the old pending stays intact
+  const income = await fetchIncomeBaseline(!creatingHistoricalDone);
 
   if (weeklyPending) {
     updateRecord(weeklyPending.id, { status: 'done', autoAccumulate: false, editable: false });
     bakeWeeklyPnlIntoMonthly(weeklyPending.pnl || 0, weeklyPending.endDate || today);
   }
-
-  const creatingHistoricalDone = !!input.endDate && (input.pnl != null || input.days != null);
-  const status = creatingHistoricalDone ? 'done' : 'pending';
-  const income = await fetchIncomeBaseline(!creatingHistoricalDone);
 
   const record: PnlRecord = {
     id,
