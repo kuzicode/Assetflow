@@ -1,0 +1,35 @@
+export declare function setPnlDataDir(dir: string): void;
+export declare function getPnlDataDir(): string;
+export type PnlStatus = 'pending' | 'done';
+export interface PnlRecord {
+    id: string;
+    period: 'weekly' | 'monthly';
+    startDate: string;
+    endDate: string;
+    startingCapital: number;
+    endingCapital: number;
+    pnl: number;
+    returnRate: number;
+    days: number;
+    annualizedReturn: number;
+    status: PnlStatus;
+    autoAccumulate: boolean;
+    editable: boolean;
+    incomeUniswap: number;
+    incomeMorpho: number;
+    incomeHlp: number;
+    incomeTotal: number;
+    lastUniswapValue: number;
+    lastMorphoValue: number;
+    lastHlpValue: number;
+    lastAutoUpdateAt: string | null;
+    basePnl: number;
+}
+export declare function listPnlRecords(period: 'weekly' | 'monthly', from?: string, to?: string): PnlRecord[];
+export declare function getPnlRecordById(id: string): PnlRecord | undefined;
+export declare function getLatestPnlRecord(period: 'weekly' | 'monthly', status: PnlStatus): PnlRecord | undefined;
+export declare function getLatestNonInProgressWeekly(): PnlRecord | undefined;
+export declare function listInProgressPnlRecords(): PnlRecord[];
+export declare function insertRecord(record: PnlRecord): void;
+export declare function updateRecord(id: string, fields: Partial<PnlRecord>): PnlRecord | undefined;
+export declare function deleteRecord(id: string): boolean;

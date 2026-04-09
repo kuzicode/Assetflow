@@ -40,6 +40,7 @@ export interface PnlRecord {
   lastHlpValue: number;
   lastAutoUpdateAt: string | null;
   basePnl: number;
+  customLabel?: string;
 }
 
 function getJsonPath(period: 'weekly' | 'monthly'): string {

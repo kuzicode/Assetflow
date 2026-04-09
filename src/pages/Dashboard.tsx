@@ -57,8 +57,9 @@ export default function Dashboard() {
   const [weeklyForm, setWeeklyForm] = useState({ startDate: '', endDate: '', startingCapital: '' });
   const [savingMonthly, setSavingMonthly] = useState(false);
   const [savingWeekly, setSavingWeekly] = useState(false);
+  const [weeklyCreateError, setWeeklyCreateError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState({ startDate: '', endDate: '', startingCapital: '', pnl: '', days: '' });
+  const [editForm, setEditForm] = useState({ startDate: '', endDate: '', startingCapital: '', pnl: '', days: '', customLabel: '' });
   const [monthlyPage, setMonthlyPage] = useState(1);
   const [weeklyPage, setWeeklyPage] = useState(1);
   const [refreshingYields, setRefreshingYields] = useState(false);
@@ -126,8 +127,24 @@ export default function Dashboard() {
     }
   };
 
+  const handleCreateNewWeek = async () => {
+    setSavingWeekly(true);
+    setWeeklyCreateError(null);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      await createWeeklyPnl({ startDate: today });
+      await fetchWeeklyPnl();
+      setWeeklyPage(1);
+    } catch (err: any) {
+      setWeeklyCreateError(err.message || '创建失败，请重试');
+    } finally {
+      setSavingWeekly(false);
+    }
+  };
+
   const handleSaveWeekly = async () => {
     setSavingWeekly(true);
+    setWeeklyCreateError(null);
     try {
       await createWeeklyPnl({
         startDate: weeklyForm.startDate,
@@ -138,6 +155,8 @@ export default function Dashboard() {
       setShowWeeklyForm(false);
       await fetchWeeklyPnl();
       setWeeklyPage(1);
+    } catch (err: any) {
+      setWeeklyCreateError(err.message || '创建失败，请重试');
     } finally {
       setSavingWeekly(false);
     }
@@ -161,6 +180,7 @@ export default function Dashboard() {
       startingCapital: String(Math.round(autoStart)),
       pnl: String(rec.pnl ?? ''),
       days: String(rec.days ?? ''),
+      customLabel: rec.customLabel || '',
     });
   };
 
@@ -173,6 +193,7 @@ export default function Dashboard() {
         startingCapital: parseFloat(editForm.startingCapital) || 0,
         pnl: parseFloat(editForm.pnl) || 0,
         days: parseInt(editForm.days) || 1,
+        customLabel: editForm.customLabel || '',
       } as any);
       setEditingId(null);
     } catch (err: any) {
@@ -220,6 +241,7 @@ export default function Dashboard() {
   const isLatestWeekly = (rec: any) => weeklyPnl.length > 0 && weeklyPnl[0].id === rec.id;
   const latestNumberClass = (isLatest: boolean) => (isLatest ? 'text-yellow-600' : '');
   const weekLabel = (rec: any, list: any[]) => {
+    if (rec.customLabel) return rec.customLabel;
     // in_progress 记录的 endDate 会持续推进到今天，用 startDate 定归属月份
     // settled/locked 用 endDate（如 0131-0205 视为 2月第1周）
     const ref = rec.status === 'pending' ? rec.startDate : rec.endDate;
@@ -699,7 +721,7 @@ export default function Dashboard() {
                               {(rec.annualizedReturn * 100).toFixed(2)}%
                             </td>
                             <td className={pnlTdStatus}>
-                              {isInProgress(rec) ? '进行中待修正' : '已结算'}
+                              {isInProgress(rec) ? '进行中' : '已结算'}
                             </td>
                             {isAdmin && (
                               <td className={`${pnlTdAction} space-x-2`}>
@@ -760,32 +782,45 @@ export default function Dashboard() {
           <div className="flex items-center justify-between">
             <h3 className="text-xl font-headline font-bold text-on-surface">周度盈亏情况</h3>
             {isAdmin && (
-              <button
-                onClick={() => setShowWeeklyForm((v) => !v)}
-                className="flex items-center gap-1.5 px-4 py-2 bg-primary text-on-primary rounded-xl text-sm font-bold hover:opacity-90 transition-opacity"
-              >
-                <span className="material-symbols-outlined text-base">{showWeeklyForm ? 'close' : 'add'}</span>
-                {showWeeklyForm ? '取消' : '录入'}
-              </button>
+              <div className="flex items-center gap-2">
+                {weeklyCreateError && <span className="text-xs text-error">{weeklyCreateError}</span>}
+                <button
+                  onClick={handleCreateNewWeek}
+                  disabled={savingWeekly}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-primary text-on-primary rounded-xl text-sm font-bold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+                >
+                  <span className="material-symbols-outlined text-base">add</span>
+                  {savingWeekly ? '创建中...' : '录入'}
+                </button>
+                <button
+                  onClick={() => { setShowWeeklyForm((v) => !v); setWeeklyCreateError(null); }}
+                  className="flex items-center gap-1 px-3 py-2 text-xs text-on-surface-variant hover:text-on-surface rounded-xl border border-outline-variant transition-colors"
+                  title="补录历史数据"
+                >
+                  <span className="material-symbols-outlined text-sm">history</span>
+                  补录
+                </button>
+              </div>
             )}
           </div>
           {showWeeklyForm && (
             <div className="bg-surface-container-low rounded-2xl p-6 space-y-4">
-              <p className="text-xs font-black text-outline uppercase tracking-widest">新增周度记录（只填开始日期即可自动计算）</p>
+              <p className="text-xs font-black text-outline uppercase tracking-widest">补录历史数据（指定起止日期）</p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-1">
                   <label className="text-xs text-on-surface-variant">起始日期</label>
                   <input type="date" value={weeklyForm.startDate} onChange={(e) => setWeeklyForm((f) => ({ ...f, startDate: e.target.value }))} className="w-full bg-surface-container border border-outline-variant rounded-xl px-4 py-2 text-on-surface text-sm focus:outline-none focus:border-primary" />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs text-on-surface-variant">结束日期（可选：补历史数据）</label>
+                  <label className="text-xs text-on-surface-variant">结束日期（可选）</label>
                   <input type="date" value={weeklyForm.endDate} onChange={(e) => setWeeklyForm((f) => ({ ...f, endDate: e.target.value }))} className="w-full bg-surface-container border border-outline-variant rounded-xl px-4 py-2 text-on-surface text-sm focus:outline-none focus:border-primary" />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs text-on-surface-variant">起始资产 (USDT，可选：默认取上一条结算值)</label>
+                  <label className="text-xs text-on-surface-variant">起始资产 (USDT，可选)</label>
                   <input type="number" value={weeklyForm.startingCapital} onChange={(e) => setWeeklyForm((f) => ({ ...f, startingCapital: e.target.value }))} className="w-full bg-surface-container border border-outline-variant rounded-xl px-4 py-2 text-on-surface text-sm focus:outline-none focus:border-primary" />
                 </div>
               </div>
+              {weeklyCreateError && <p className="text-xs text-error">{weeklyCreateError}</p>}
               <button onClick={handleSaveWeekly} disabled={savingWeekly || !weeklyForm.startDate} className="px-6 py-2 bg-primary text-on-primary rounded-xl text-sm font-bold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity">
                 {savingWeekly ? '保存中...' : '保存'}
               </button>
@@ -856,19 +891,28 @@ export default function Dashboard() {
                               <div>{weekLabel(rec, weeklyPnl as any)}</div>
                               <div className="text-xs opacity-70">{fmtMMDD(rec.startDate)}-{fmtMMDD(rec.endDate)}</div>
                               {inEdit && (
-                                <div className="mt-2 grid grid-cols-2 gap-2">
+                                <div className="mt-2 space-y-1.5">
                                   <input
-                                    type="date"
-                                    value={editForm.startDate}
-                                    onChange={(e) => setEditForm((f) => ({ ...f, startDate: e.target.value }))}
-                                    className="bg-surface-container border border-outline-variant rounded px-2 py-1 text-xs"
+                                    type="text"
+                                    value={editForm.customLabel}
+                                    onChange={(e) => setEditForm((f) => ({ ...f, customLabel: e.target.value }))}
+                                    placeholder="自定义名称（如：4月第2周）"
+                                    className="w-full bg-surface-container border border-outline-variant rounded px-2 py-1 text-xs"
                                   />
-                                  <input
-                                    type="date"
-                                    value={editForm.endDate}
-                                    onChange={(e) => setEditForm((f) => ({ ...f, endDate: e.target.value }))}
-                                    className="bg-surface-container border border-outline-variant rounded px-2 py-1 text-xs"
-                                  />
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <input
+                                      type="date"
+                                      value={editForm.startDate}
+                                      onChange={(e) => setEditForm((f) => ({ ...f, startDate: e.target.value }))}
+                                      className="bg-surface-container border border-outline-variant rounded px-2 py-1 text-xs"
+                                    />
+                                    <input
+                                      type="date"
+                                      value={editForm.endDate}
+                                      onChange={(e) => setEditForm((f) => ({ ...f, endDate: e.target.value }))}
+                                      className="bg-surface-container border border-outline-variant rounded px-2 py-1 text-xs"
+                                    />
+                                  </div>
                                 </div>
                               )}
                             </td>
@@ -892,7 +936,7 @@ export default function Dashboard() {
                             </td>
                             <td className={`${pnlTdHeadline} ${pnlColor(rec.annualizedReturn)} ${latestNumberClass(latest)}`}>{(rec.annualizedReturn * 100).toFixed(2)}%</td>
                             <td className={pnlTdStatus}>
-                              {isInProgress(rec) ? '进行中待修正' : '已结算'}
+                              {isInProgress(rec) ? '进行中' : '已结算'}
                             </td>
                             {isAdmin && (
                               <td className={pnlTdAction}>

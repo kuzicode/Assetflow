@@ -172,6 +172,7 @@ export function formatPnlRecord(record: PnlRecord | undefined) {
     lastUniswapValue: record.lastUniswapValue || 0,
     lastMorphoValue: record.lastMorphoValue || 0,
     lastHlpValue: record.lastHlpValue || 0,
+    customLabel: record.customLabel || null,
   };
 }
 
@@ -419,6 +420,7 @@ export function updatePnlRecordById(id: string, data: any) {
     lastUniswapValue: data.lastUniswapValue ?? existing.lastUniswapValue,
     lastMorphoValue: data.lastMorphoValue ?? existing.lastMorphoValue,
     lastHlpValue: data.lastHlpValue ?? existing.lastHlpValue,
+    customLabel: data.customLabel !== undefined ? (data.customLabel || undefined) : existing.customLabel,
   });
 
   if (existing.period === 'weekly') {

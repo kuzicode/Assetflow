@@ -1,0 +1,134 @@
+import { ethers } from 'ethers';
+import { AAVE_UI_POOL_DATA_PROVIDERS, AAVE_POOL_ADDRESSES_PROVIDERS } from '../config/defi.js';
+import { createProvider } from '../config/chains.js';
+// AAVE V3 Pool contract — getReserveData(asset) for direct per-asset APY lookup
+const POOL_ABI = [
+    'function getReserveData(address asset) external view returns (tuple(uint256 configuration, uint128 liquidityIndex, uint128 currentLiquidityRate, uint128 variableBorrowIndex, uint128 currentVariableBorrowRate, uint128 currentStableBorrowRate, uint40 lastUpdateTimestamp, uint16 id, address aTokenAddress, address stableDebtTokenAddress, address variableDebtTokenAddress, address interestRateStrategyAddress, uint128 accruedToTreasury, uint128 unbacked, uint128 isolationModeTotalDebt))',
+];
+// AAVE V3 Pool on Ethereum mainnet
+const AAVE_POOL_ETHEREUM = '0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2';
+// USDC on Ethereum mainnet (from https://app.aave.com/reserve-overview/?underlyingAsset=0xa0b86991...)
+const USDC_ETHEREUM = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
+const UI_POOL_ABI = [
+    'function getUserReservesData(address provider, address user) view returns (tuple(address underlyingAsset, uint256 scaledATokenBalance, bool usageAsCollateralEnabledOnUser, uint256 currentStableDebt, uint256 currentVariableDebt, uint256 principalStableDebt, uint256 scaledVariableDebt, uint256 stableBorrowRate, uint256 variableBorrowRate, uint40 stableRateLastUpdated, bool usageAsCollateralEnabled)[] userReserves, tuple(uint256 totalCollateralBase, uint256 totalDebtBase, uint256 availableBorrowsBase, uint256 currentLiquidationThreshold, uint256 ltv, uint256 healthFactor) userEmodeCategoryId)',
+    'function getReservesData(address provider) view returns (tuple(address underlyingAsset, string name, string symbol, uint256 decimals, uint256 baseLTVasCollateral, uint256 reserveLiquidationThreshold, uint256 reserveLiquidationBonus, uint256 reserveFactor, bool usageAsCollateralEnabled, bool borrowingEnabled, bool stableBorrowRateEnabled, bool isActive, bool isFrozen, uint128 liquidityIndex, uint128 variableBorrowIndex, uint128 liquidityRate, uint128 variableBorrowRate, uint128 stableBorrowRate, uint40 lastUpdateTimestamp, address aTokenAddress, address stableDebtTokenAddress, address variableDebtTokenAddress, address interestRateStrategyAddress, uint256 availableLiquidity, uint256 totalPrincipalStableDebt, uint256 averageStableRate, uint256 stableDebtLastUpdateTimestamp, uint256 totalScaledVariableDebt, uint256 priceInMarketReferenceCurrency, address priceOracle, uint256 variableRateSlope1, uint256 variableRateSlope2, uint256 stableRateSlope1, uint256 stableRateSlope2, uint256 baseStableBorrowRate, uint256 baseVariableBorrowRate, uint256 optimalUsageRatio, bool isPaused, bool isSiloedBorrowing, uint128 accruedToTreasury, uint128 unbacked, uint128 isolationModeTotalDebt, bool flashLoanEnabled, uint256 debtCeiling, uint256 debtCeilingDecimals, uint8 eModeCategoryId, uint256 borrowCap, uint256 supplyCap, uint16 eModeLtv, uint16 eModeLiquidationThreshold, uint16 eModeLiquidationBonus, address eModePriceSource, string eModeLabel, bool borrowableInIsolation)[] reservesData, tuple(uint256 marketReferenceCurrencyUnit, int256 marketReferenceCurrencyPriceInUsd, int256 networkBaseTokenPriceInUsd, uint8 networkBaseTokenPriceDecimals) baseCurrencyInfo)',
+];
+const ERC20_ABI = [
+    'function decimals() view returns (uint8)',
+    'function symbol() view returns (string)',
+];
+const RAY = 10n ** 27n;
+const SECONDS_PER_YEAR = 31536000;
+/**
+ * Fetch AAVE V3 USDC supply APY on Ethereum mainnet.
+ * Uses Pool.getReserveData(usdcAddress) directly — same approach as reference monitor.
+ * Returns APY as a percentage (e.g. 3.52 means 3.52%).
+ */
+export async function fetchAaveUsdcSupplyApy() {
+    const provider = createProvider('ethereum');
+    if (!provider)
+        return null;
+    try {
+        const pool = new ethers.Contract(AAVE_POOL_ETHEREUM, POOL_ABI, provider);
+        const reserveData = await pool.getReserveData(USDC_ETHEREUM);
+        // currentLiquidityRate is in RAY (1e27); APY = (1 + rate/RAY/SECONDS_PER_YEAR)^SECONDS_PER_YEAR - 1
+        const ratePerSecond = Number(reserveData.currentLiquidityRate) / 1e27;
+        const apy = (Math.pow(1 + ratePerSecond / SECONDS_PER_YEAR, SECONDS_PER_YEAR) - 1) * 100;
+        return apy;
+    }
+    catch (e) {
+        console.error('[Aave V3] APY fetch failed:', e.message);
+        return null;
+    }
+}
+/**
+ * Fetch Aave V3 supply and borrow positions for an address.
+ * Uses liquidityIndex to convert scaledATokenBalance → actual balance.
+ */
+export async function fetchAaveV3Balances(chain, address, provider) {
+    const uiPoolAddr = AAVE_UI_POOL_DATA_PROVIDERS[chain];
+    const poolProviderAddr = AAVE_POOL_ADDRESSES_PROVIDERS[chain];
+    if (!uiPoolAddr || !poolProviderAddr)
+        return [];
+    const positions = [];
+    try {
+        const uiPool = new ethers.Contract(uiPoolAddr, UI_POOL_ABI, provider);
+        // Fetch user reserves + reserve data in parallel
+        const [[userReserves], [reservesData]] = await Promise.all([
+            uiPool.getUserReservesData(poolProviderAddr, address),
+            uiPool.getReservesData(poolProviderAddr),
+        ]);
+        // Build liquidityIndex map: underlyingAsset -> liquidityIndex
+        const indexMap = {};
+        const varBorrowIndexMap = {};
+        for (const r of reservesData) {
+            const key = r.underlyingAsset.toLowerCase();
+            indexMap[key] = r.liquidityIndex;
+            varBorrowIndexMap[key] = r.variableBorrowIndex;
+        }
+        // Filter active reserves
+        const activeReserves = userReserves.filter((r) => r.scaledATokenBalance > 0n || r.currentVariableDebt > 0n || r.currentStableDebt > 0n);
+        await Promise.all(activeReserves.map(async (reserve) => {
+            try {
+                const tokenContract = new ethers.Contract(reserve.underlyingAsset, ERC20_ABI, provider);
+                const [decimals, symbol] = await Promise.all([
+                    tokenContract.decimals(),
+                    tokenContract.symbol(),
+                ]);
+                const dec = Number(decimals);
+                const assetKey = reserve.underlyingAsset.toLowerCase();
+                // Supply position: scaledBalance * liquidityIndex / RAY
+                if (reserve.scaledATokenBalance > 0n) {
+                    const liqIndex = indexMap[assetKey] || RAY;
+                    const actualBalance = (reserve.scaledATokenBalance * liqIndex) / RAY;
+                    const amount = parseFloat(ethers.formatUnits(actualBalance, dec));
+                    if (amount > 0.000001) {
+                        positions.push({
+                            protocol: 'Aave V3',
+                            type: 'Lending',
+                            chain,
+                            symbol,
+                            amount,
+                            isDebt: false,
+                        });
+                    }
+                }
+                // Variable debt
+                if (reserve.currentVariableDebt > 0n) {
+                    const amount = parseFloat(ethers.formatUnits(reserve.currentVariableDebt, dec));
+                    if (amount > 0.000001) {
+                        positions.push({
+                            protocol: 'Aave V3',
+                            type: 'Borrow',
+                            chain,
+                            symbol,
+                            amount: -amount,
+                            isDebt: true,
+                        });
+                    }
+                }
+                // Stable debt
+                if (reserve.currentStableDebt > 0n) {
+                    const amount = parseFloat(ethers.formatUnits(reserve.currentStableDebt, dec));
+                    if (amount > 0.000001) {
+                        positions.push({
+                            protocol: 'Aave V3',
+                            type: 'Borrow',
+                            chain,
+                            symbol,
+                            amount: -amount,
+                            isDebt: true,
+                        });
+                    }
+                }
+            }
+            catch (e) {
+                console.error(`[Aave V3] Error processing ${reserve.underlyingAsset}:`, e.message);
+            }
+        }));
+    }
+    catch (e) {
+        console.error(`[Aave V3] Failed for ${chain}:`, e.message);
+    }
+    return positions;
+}
