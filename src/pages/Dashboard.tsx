@@ -304,7 +304,7 @@ export default function Dashboard() {
             <div className="flex justify-between items-start mb-6">
               <div>
                 <span className="px-3 py-1 bg-primary-fixed text-on-primary-fixed rounded-full text-xs font-bold tracking-wider mb-4 inline-block">
-                  收益概览 &bull; PRIMARY REVENUE
+                  收益概览 &bull; 公允价值
                 </span>
                 <h3 className="text-4xl font-headline font-bold text-on-surface">
                   {r ? r.fairValue.toLocaleString() : '0'}
@@ -315,7 +315,7 @@ export default function Dashboard() {
                   运行时间:
                   <span className="font-mono-data ml-2">{runningTime}</span>
                   {runningTimePending && (
-                    <span className="ml-2 text-xs text-yellow-600 font-medium">待结算更新</span>
+                    <span className="ml-2 text-xs text-yellow-600 font-medium">待下次周结更新</span>
                   )}
                 </p>
               </div>
