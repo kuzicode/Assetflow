@@ -75,9 +75,12 @@ export default function Layout() {
     <div className="min-h-screen bg-surface text-on-surface">
       {/* Sidebar */}
       <aside className="fixed left-0 top-0 z-50 flex h-screen w-52 flex-col border-r border-outline-variant/30 bg-[linear-gradient(180deg,#f7fbf9_0%,#eef5f1_100%)] py-8">
-        <div className="mb-9 px-5">
-          <h1 className="text-xl font-bold text-primary font-headline tracking-tight">Hyperflow</h1>
-          <p className="text-xs text-on-surface-variant/60 font-medium mt-1">Defi by TrusmeQuant</p>
+        <div className="mb-9 flex items-center gap-2.5 px-5">
+          <img src="/favicon.svg" alt="" className="h-8 w-8 shrink-0" />
+          <div className="min-w-0">
+            <h1 className="text-xl font-bold text-primary font-headline tracking-tight leading-tight">Hyperflow</h1>
+            <p className="text-[11px] text-on-surface-variant/60 font-medium mt-0.5 whitespace-nowrap">Defi by TrusmeQuant</p>
+          </div>
         </div>
 
         <nav className="flex-1 space-y-5 overflow-y-auto px-3">
