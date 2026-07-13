@@ -56,8 +56,8 @@ export default function Login() {
 
         {/* Brand */}
         <header className="text-center mb-20 space-y-4">
-          <h1 className="font-headline text-5xl font-bold tracking-tight text-primary">Assetflow</h1>
-          <p className="text-on-surface-variant tracking-widest font-light text-sm uppercase">加密货币数据看板</p>
+          <h1 className="font-headline text-5xl font-bold tracking-tight text-primary">Hyperflow</h1>
+          <p className="text-on-surface-variant tracking-widest font-light text-sm uppercase">Defi by TrusmeQuant</p>
         </header>
 
         {/* Login section */}

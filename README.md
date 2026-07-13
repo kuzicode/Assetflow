@@ -1,6 +1,8 @@
-# Assetflow
+# Assetflow (Hyperflow Defi)
 
 面向 DeFi 与个人加密资产的本地仪表板：多链持仓聚合、手动资产录入、快照与周/月度 P&L。
+
+生产入口：`https://defi.hyperflow.one`（对外品牌 Hyperflow Defi 产品线,nginx TLS 反代 → :3001）。
 
 设计说明见 [docs/DESIGN.md](docs/DESIGN.md)。
 
