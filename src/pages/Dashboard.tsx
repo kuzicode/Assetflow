@@ -261,13 +261,20 @@ export default function Dashboard() {
     return `${month}月第${weekNo}周`;
   };
 
+  // 月度归属：in_progress 用 startDate（endDate 会推进到下月）；
+  // settled 用区间中点（0131-0228 → 2月，跨月延长结算的 0901-1008 → 9月）
+  const monthRefDate = (rec: { status?: string; startDate: string; endDate: string }) => {
+    if (rec.status === 'pending') return new Date(`${rec.startDate}T00:00:00`);
+    const s = new Date(`${rec.startDate}T00:00:00`).getTime();
+    const e = new Date(`${rec.endDate}T00:00:00`).getTime();
+    return new Date((s + e) / 2);
+  };
+
   const monthlySeries = monthlyPnl
     .slice()
     .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
     .map((r) => {
-      // in_progress 用 startDate 避免 endDate 推进到下月被错误归类；settled/locked 用 endDate（如 0131-0228 → 2月）
-      const ref = r.status === 'pending' ? r.startDate : r.endDate;
-      const d = new Date(`${ref}T00:00:00`);
+      const d = monthRefDate(r);
       const label = `${d.getMonth() + 1}月`;
       return { label, pnl: Number(r.pnl || 0) };
     });
@@ -675,8 +682,7 @@ export default function Dashboard() {
                   <tbody className="divide-y divide-surface-container">
                     {monthlyPageRows.length > 0 ? (
                       monthlyPageRows.map((rec) => {
-                        const ref = rec.status === 'pending' ? rec.startDate : rec.endDate;
-                        const d = new Date(ref + 'T00:00:00');
+                        const d = monthRefDate(rec);
                         const monthLabel = `${d.getFullYear()}年${d.getMonth() + 1}月`;
                         const inEdit = editingId === rec.id;
                         const latest = isLatestMonthly(rec);
